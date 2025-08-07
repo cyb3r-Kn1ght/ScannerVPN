@@ -41,6 +41,7 @@ push: build
 deploy:
 	@echo "🚀 Deploying Controller to Kubernetes..."
 	kubectl apply -f ../manifests/namespace.yaml
+	kubectl apply -f ../manifests/controller-pv.yaml
 	kubectl apply -f ../manifests/controller-rbac.yaml
 	kubectl apply -f ../manifests/controller-deployment.yaml
 	kubectl apply -f ../manifests/controller-service.yaml
@@ -168,8 +169,6 @@ test-connectivity:
 	curl -f http://10.102.199.42:8000/health || echo "Controller not accessible"
 	@echo "\nScanner Node health:"
 	curl -f http://10.102.199.37:8000/health || echo "Scanner Node not accessible - run port-forward first"
-	@echo "\nVPN Proxy health:"
-	curl -f http://10.102.199.36:8000/health || echo "VPN Proxy not accessible"
 
 logs-recent-job:
 	@echo "📋 Recent scan job logs:"

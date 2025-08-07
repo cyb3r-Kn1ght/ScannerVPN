@@ -1,0 +1,20 @@
+tools:
+  - name: dns-lookup
+    image: nguyenminhnguyen/dns-lookup:latest
+    args: ["--domain"]
+
+  - name: port-scan
+    image: nguyenminhnguyen/port-scan:latest
+    args: ["--target"]
+
+  - name: httpx-scan
+    image: nguyenminhnguyen/httpx-scan:latest
+    args: ["--url"]
+
+  - name: nuclei-scan            
+    image: nguyenminhnguyen/nuclei-scan:latest
+    args: ["--target"] 
+              
+  - name: wpscan
+    image: nguyenminhnguyen/wpscan-scan:latest
+    args: ["--url"]

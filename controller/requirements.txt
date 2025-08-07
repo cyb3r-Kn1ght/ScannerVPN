@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+typing_extensions
+httpx
+kubernetes
+pyyaml
+requests
+aiohttp
+requests

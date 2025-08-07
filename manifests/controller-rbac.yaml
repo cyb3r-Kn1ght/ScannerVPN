@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: controller-sa
+  namespace: scan-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: controller-role
+  namespace: scan-system
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: controller-rolebinding
+  namespace: scan-system
+subjects:
+  - kind: ServiceAccount
+    name: controller-sa
+    namespace: scan-system
+roleRef:
+  kind: Role
+  name: controller-role
+  apiGroup: rbac.authorization.k8s.io

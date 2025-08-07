@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scanner-node-api
+  namespace: scan-system
+  labels:
+    app: scanner-node-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scanner-node-api
+  template:
+    metadata:
+      labels:
+        app: scanner-node-api
+    spec:
+      serviceAccountName: scanner-node-sa
+      containers:
+        - name: scanner-node-api
+          image: nguyenminhnguyen/scanner-node-api:latest
+          imagePullPolicy: Never
+          env:
+          - name: REGISTRY
+            value: nguyenminhnguyen
+          - name: TAG
+            value: latest
+          - name: NAMESPACE
+            value: scan-system
+          - name: EXTERNAL_CONTROLLER_IP
+            value: "10.102.199.42"  # VM1 Controller IP
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20

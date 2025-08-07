@@ -36,3 +36,19 @@ class ScanJob(BaseModel):
 
     class Config:
         from_attributes = True
+
+class PaginationInfo(BaseModel):
+    total_items: int
+    total_pages: int
+    current_page: int
+    page_size: int
+    has_next: bool
+    has_previous: bool
+
+class PaginatedScanResults(BaseModel):
+    pagination: PaginationInfo
+    results: List[ScanResult]
+
+class PaginatedScanJobs(BaseModel):
+    pagination: PaginationInfo
+    results: List[ScanJob]

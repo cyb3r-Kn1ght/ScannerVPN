@@ -77,7 +77,9 @@ def create_scan_result(
 ):
     """
     Nhận POST từ Scanner Node, lưu kết quả vào DB.
+    Cập nhật job status thành 'completed' khi nhận được kết quả.
     """
+    # Lưu scan result
     db_obj = models.ScanResult(
         target=payload.target,
         resolved_ips=payload.resolved_ips,
@@ -85,30 +87,156 @@ def create_scan_result(
         scan_metadata=payload.scan_metadata,
     )
     db.add(db_obj)
+    
+    # Cập nhật job status thành completed nếu có job_id
+    if payload.scan_metadata and 'job_id' in payload.scan_metadata:
+        job_id = payload.scan_metadata['job_id']
+        job = db.query(models.ScanJob).filter(models.ScanJob.job_id == job_id).first()
+        if job:
+            job.status = "completed"
+            logger.info(f"Updated job {job_id} status to completed")
+    
     db.commit()
     return
 
-@app.get("/api/scan_results", response_model=List[schemas.ScanResult])
+@app.get("/api/scan_results", response_model=schemas.PaginatedScanResults)
 def read_scan_results(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
+    target: Optional[str] = Query(None, description="Filter by target"),
+    job_id: Optional[str] = Query(None, description="Filter by job_id"),
+    latest: bool = Query(False, description="Sort by timestamp descending"),
     db: Session = Depends(get_db)
 ):
     """
-    Trả về các scan results, hỗ trợ phân trang bằng skip & limit.
+    Trả về các scan results với pagination.
+    Có thể lọc theo target, job_id và sắp xếp theo thời gian.
     """
-    return db.query(models.ScanResult).offset(skip).limit(limit).all()
+    # Build base query
+    query = db.query(models.ScanResult)
+    
+    # Apply filters
+    if target:
+        query = query.filter(models.ScanResult.target == target)
+    
+    if job_id:
+        # Filter by job_id in scan_metadata JSON field
+        query = query.filter(models.ScanResult.scan_metadata.op('->>')('job_id') == job_id)
+    
+    # Sort by timestamp
+    if latest:
+        query = query.order_by(models.ScanResult.timestamp.desc())
+    else:
+        query = query.order_by(models.ScanResult.id.desc())  # Default sort by ID descending
+    
+    # Get total count for pagination
+    total_items = query.count()
+    
+    # Calculate pagination
+    import math
+    total_pages = math.ceil(total_items / page_size) if total_items > 0 else 1
+    offset = (page - 1) * page_size
+    has_next = page < total_pages
+    has_previous = page > 1
+    
+    # Get paginated results
+    results = query.offset(offset).limit(page_size).all()
+    
+    # Build pagination response
+    pagination_info = schemas.PaginationInfo(
+        total_items=total_items,
+        total_pages=total_pages,
+        current_page=page,
+        page_size=page_size,
+        has_next=has_next,
+        has_previous=has_previous
+    )
+    
+    return schemas.PaginatedScanResults(
+        pagination=pagination_info,
+        results=results
+    )
 
-@app.get("/api/scan_jobs", response_model=List[schemas.ScanJob])
+@app.get("/api/scan_results/list", response_model=List[schemas.ScanResult])
+def read_scan_results_list(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1),
+    target: Optional[str] = Query(None, description="Filter by target"),
+    job_id: Optional[str] = Query(None, description="Filter by job_id"),
+    latest: bool = Query(False, description="Sort by timestamp descending"),
+    db: Session = Depends(get_db)
+):
+    """
+    Legacy endpoint: Trả về các scan results dạng list (backward compatibility).
+    Sử dụng /api/scan_results thay thế với pagination support.
+    """
+    query = db.query(models.ScanResult)
+    
+    # Apply filters
+    if target:
+        query = query.filter(models.ScanResult.target == target)
+    
+    if job_id:
+        query = query.filter(models.ScanResult.scan_metadata.op('->>')('job_id') == job_id)
+    
+    # Sort by timestamp
+    if latest:
+        query = query.order_by(models.ScanResult.timestamp.desc())
+    else:
+        query = query.order_by(models.ScanResult.id.desc())
+    
+    return query.offset(skip).limit(limit).all()
+
+@app.get("/api/scan_jobs", response_model=schemas.PaginatedScanJobs)
 def read_scan_jobs(
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
+    db: Session = Depends(get_db)
+):
+    """
+    Trả về các scan jobs với pagination.
+    """
+    query = db.query(models.ScanJob).order_by(models.ScanJob.id.desc())
+    
+    # Get total count
+    total_items = query.count()
+    
+    # Calculate pagination
+    import math
+    total_pages = math.ceil(total_items / page_size) if total_items > 0 else 1
+    offset = (page - 1) * page_size
+    has_next = page < total_pages
+    has_previous = page > 1
+    
+    # Get paginated results
+    results = query.offset(offset).limit(page_size).all()
+    
+    # Build pagination response
+    pagination_info = schemas.PaginationInfo(
+        total_items=total_items,
+        total_pages=total_pages,
+        current_page=page,
+        page_size=page_size,
+        has_next=has_next,
+        has_previous=has_previous
+    )
+    
+    return schemas.PaginatedScanJobs(
+        pagination=pagination_info,
+        results=results
+    )
+
+@app.get("/api/scan_jobs/list", response_model=List[schemas.ScanJob])
+def read_scan_jobs_list(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1),
     db: Session = Depends(get_db)
 ):
     """
-    Trả về các scan jobs, hỗ trợ phân trang bằng skip & limit.
+    Legacy endpoint: Trả về các scan jobs dạng list (backward compatibility).
+    Sử dụng /api/scan_jobs thay thế với pagination support.
     """
-    return db.query(models.ScanJob).offset(skip).limit(limit).all()
+    return db.query(models.ScanJob).order_by(models.ScanJob.id.desc()).offset(skip).limit(limit).all()
 
 @app.get("/api/scan_jobs/{job_id}", response_model=schemas.ScanJob)
 def read_scan_job(job_id: str, db: Session = Depends(get_db)):
@@ -119,6 +247,35 @@ def read_scan_job(job_id: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Scan job not found")
     return job
+
+@app.patch("/api/scan_jobs/{job_id}/status")
+def update_job_status(job_id: str, status_update: dict, db: Session = Depends(get_db)):
+    """
+    Cập nhật status của một scan job.
+    """
+    job = db.query(models.ScanJob).filter(models.ScanJob.job_id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+    
+    new_status = status_update.get("status")
+    if new_status not in ["submitted", "running", "completed", "failed"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    
+    job.status = new_status
+    db.commit()
+    logger.info(f"Updated job {job_id} status to {new_status}")
+    return {"job_id": job_id, "status": new_status}
+
+@app.get("/api/scan_results/latest")
+def get_latest_scan_results(
+    limit: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """
+    Lấy các scan results mới nhất theo timestamp.
+    """
+    results = db.query(models.ScanResult).order_by(models.ScanResult.timestamp.desc()).limit(limit).all()
+    return results
 
 @app.post("/api/scan", status_code=201)
 def create_scan(
@@ -187,9 +344,15 @@ def call_scanner_node(tool: str, targets: List[str], options: Dict[str, Any], jo
                 selected_vpn = next((vpn for vpn in all_vpns if vpn.get('filename') == vpn_profile), None)
                 
                 if selected_vpn:
-                    # Sử dụng metadata đầy đủ từ VPN service
+                    # Sử dụng metadata đầy đủ từ VPN service nhưng ưu tiên country từ dashboard
                     vpn_assignment = selected_vpn.copy()
-                    logger.info(f"Found VPN metadata: {selected_vpn.get('country', 'Unknown')} - {selected_vpn.get('hostname', 'Unknown')}")
+                    # Override country với giá trị từ dashboard nếu có
+                    if country:
+                        vpn_assignment['country'] = country
+                    elif 'country' not in vpn_assignment or vpn_assignment['country'] == 'Unknown':
+                        vpn_assignment['country'] = 'Unknown'
+                    
+                    logger.info(f"Found VPN metadata: {vpn_assignment.get('country', 'Unknown')} - {selected_vpn.get('hostname', 'Unknown')}")
                 else:
                     # Fallback nếu không tìm thấy VPN trong danh sách
                     # Sử dụng country từ dashboard nếu có, nếu không thì "Unknown"

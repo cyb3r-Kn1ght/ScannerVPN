@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: scannernode-targets
-  namespace: scan-system
-data:
-  targets.txt: |
-    example.com
-    8.8.8.8

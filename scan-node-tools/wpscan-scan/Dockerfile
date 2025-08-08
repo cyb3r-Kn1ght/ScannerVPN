@@ -1,9 +1,20 @@
 FROM ruby:3.3-slim
 
-# 1) Thư viện hỗ trợ (g++ để build nokogiri)
+# 1) Thư viện hỗ trợ và VPN tools
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential libcurl4-openssl-dev libssl-dev zlib1g-dev && \
+        build-essential \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        zlib1g-dev \
+        python3 \
+        python3-pip \
+        openvpn \
+        curl \
+        wget \
+        iproute2 \
+        iptables \
+        procps && \
     rm -rf /var/lib/apt/lists/*
 
 # 2) Cài wpscan gem

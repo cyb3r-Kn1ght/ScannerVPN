@@ -1,11 +1,11 @@
 from pydantic import BaseModel
-from typing import List, Any, Dict, Optional
+from typing import List, Any, Dict, Optional, Union
 from datetime import datetime
 
 class ScanResultCreate(BaseModel):
     target: str
     resolved_ips: List[str] = []
-    open_ports: List[int] = []
+    open_ports: Union[List[int], List[Dict[str, Any]]] = []
     scan_metadata: Dict[str, Any] = {}
 
 class ScanResult(ScanResultCreate):

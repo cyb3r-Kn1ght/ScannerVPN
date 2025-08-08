@@ -4,14 +4,7 @@ from typing import List, Dict, Any, Optional
 import os
 import time
 import httpx
-import logging
 from kubernetes import client, config
-from kubernetes.client.rest import ApiException
-from kubernetes_service import KubernetesService
-
-# Thiết lập logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Load in-cluster config or fallback to kubeconfig
 try:
@@ -38,9 +31,6 @@ class ScanRequest(BaseModel):
 
 app = FastAPI()
 
-# Initialize Kubernetes service
-k8s_service = KubernetesService(namespace=NAMESPACE)
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -50,21 +40,7 @@ def scan(req: ScanRequest):
     return _create_job(req)
 
 @app.post("/api/scan/execute", status_code=201)
-def execute_scan(req: ScanRequest, request: Request = None):
-    """
-    Thực hiện scan - CHỈ được gọi từ Controller.
-    """
-    # Log request info for security monitoring
-    if request:
-        client_info = AuthMiddleware.get_client_info(request)
-        logger.info(f"Scan request from {client_info['client_ip']} (auth: {client_info['is_authenticated']})")
-        
-        # Check authentication for production environments
-        if not client_info['is_authenticated']:
-            logger.warning(f"Unauthorized scan request from {client_info['client_ip']}")
-            # In production, you might want to require auth:
-            # AuthMiddleware.require_controller_auth(request)
-    
+def execute_scan(req: ScanRequest):
     print(f"[DEBUG] Received payload: {req.dict()}")  # Debug line
     print(f"[DEBUG] VPN assignment: {req.vpn_assignment}")  # Debug VPN specifically
     return _create_job(req)
@@ -94,6 +70,12 @@ def _create_job(req: ScanRequest):
     # Thêm job ID nếu có
     if req.job_id:
         env_vars.append(client.V1EnvVar(name="JOB_ID", value=req.job_id))
+    
+    # Thêm scan options nếu có
+    if req.options:
+        import json
+        options_json = json.dumps(req.options)
+        env_vars.append(client.V1EnvVar(name="SCAN_OPTIONS", value=options_json))
     
     # nếu là wpscan
     if req.tool == "wpscan-scan":
@@ -166,63 +148,3 @@ def _create_job(req: ScanRequest):
         return {"job_name": job_name, "status": "created"}
     except client.rest.ApiException as e:
         raise HTTPException(status_code=500, detail=f"Failed to create job: {e}")
-
-# ============ KUBERNETES JOB MANAGEMENT API ============
-
-class CleanupOrphanedRequest(BaseModel):
-    known_job_names: List[str]  # Danh sách job names từ controller database
-
-@app.delete("/api/kubernetes/jobs/{job_name}")
-def delete_kubernetes_job(job_name: str):
-    """
-    Xóa một Kubernetes job cụ thể và tất cả pods con.
-    """
-    return k8s_service.delete_job(job_name)
-
-@app.post("/api/kubernetes/cleanup-orphaned")
-def cleanup_orphaned_jobs(req: CleanupOrphanedRequest):
-    """
-    Tìm và xóa các Kubernetes jobs không có trong danh sách known_job_names.
-    """
-    return k8s_service.cleanup_orphaned_jobs(req.known_job_names)
-
-@app.get("/api/kubernetes/jobs")
-def list_kubernetes_jobs():
-    """
-    Lấy danh sách tất cả Kubernetes jobs trong namespace.
-    """
-    try:
-        return k8s_service.list_jobs()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/kubernetes/jobs/{job_name}")
-def get_kubernetes_job_status(job_name: str):
-    """
-    Lấy thông tin chi tiết của một Kubernetes job.
-    """
-    try:
-        result = k8s_service.get_job_status(job_name)
-        return result
-    except Exception as e:
-        if "not found" in str(e):
-            raise HTTPException(status_code=404, detail=str(e))
-        else:
-            raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/kubernetes/pods")
-def list_kubernetes_pods():
-    """
-    Lấy danh sách tất cả pods trong namespace.
-    """
-    try:
-        return k8s_service.list_pods()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/kubernetes/cleanup-orphaned-pods")
-def cleanup_orphaned_pods():
-    """
-    Tìm và xóa các pods không có job owner (orphaned pods).
-    """
-    return k8s_service.cleanup_orphaned_pods()

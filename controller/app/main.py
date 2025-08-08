@@ -7,11 +7,9 @@ import yaml
 import os
 from uuid import uuid4
 from pydantic import BaseModel
-from datetime import datetime
 
 from app import models, schemas, database
 from app.vpn_service import VPNService
-from app.cleanup_service import CleanupService
 
 # Thiết lập logging
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +24,7 @@ try:
     # Check và migrate VPN fields nếu chưa có
     from sqlalchemy import text
     with database.engine.connect() as conn:
-        # Check if vpn_profile column exists
+        # Check if vpn_profile column exists in scan_jobs
         result = conn.execute(text("PRAGMA table_info(scan_jobs)"))
         columns = [row[1] for row in result.fetchall()]
         
@@ -34,16 +32,28 @@ try:
             ("vpn_profile", "TEXT"),
             ("vpn_country", "TEXT"), 
             ("vpn_hostname", "TEXT"),
-            ("vpn_assignment", "TEXT")
+            ("vpn_assignment", "TEXT"),
+            ("workflow_id", "TEXT"),
+            ("step_order", "INTEGER")
         ]
         
         for field_name, field_type in vpn_fields:
             if field_name not in columns:
-                logger.info(f"Adding missing column: {field_name}")
+                logger.info(f"Adding missing column to scan_jobs: {field_name}")
                 conn.execute(text(f"ALTER TABLE scan_jobs ADD COLUMN {field_name} {field_type}"))
                 conn.commit()
             else:
-                logger.debug(f"Column {field_name} already exists")
+                logger.debug(f"Column {field_name} already exists in scan_jobs")
+        
+        # Check if workflow_jobs table exists
+        result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='workflow_jobs'"))
+        workflow_table_exists = result.fetchone() is not None
+        
+        if not workflow_table_exists:
+            logger.info("Creating workflow_jobs table...")
+            # Table will be created by create_all() below
+        else:
+            logger.debug("workflow_jobs table already exists")
         
         logger.info("Database schema migration completed")
         
@@ -55,11 +65,6 @@ except Exception as e:
 
 # Khởi tạo VPN Service
 vpn_service = VPNService()
-
-# Khởi tạo Cleanup Service
-cleanup_service = CleanupService(
-    scanner_node_url=os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
-)
 
 app = FastAPI(
     title="Scanner Controller",
@@ -135,9 +140,47 @@ def create_scan_result(
         if job:
             job.status = "completed"
             logger.info(f"Updated job {job_id} status to completed")
+            
+            # Update workflow progress if job belongs to workflow
+            if job.workflow_id:
+                update_workflow_progress(job.workflow_id, db)
     
     db.commit()
     return
+
+def update_workflow_progress(workflow_id: str, db: Session):
+    """Update workflow completion status"""
+    workflow = db.query(models.WorkflowJob).filter(
+        models.WorkflowJob.workflow_id == workflow_id
+    ).first()
+    
+    if not workflow:
+        return
+    
+    # Count completed/failed jobs
+    completed = db.query(models.ScanJob).filter(
+        models.ScanJob.workflow_id == workflow_id,
+        models.ScanJob.status == "completed"
+    ).count()
+    
+    failed = db.query(models.ScanJob).filter(
+        models.ScanJob.workflow_id == workflow_id,
+        models.ScanJob.status == "failed"
+    ).count()
+    
+    workflow.completed_steps = completed
+    workflow.failed_steps = failed
+    
+    # Update workflow status
+    if completed + failed >= workflow.total_steps:
+        if failed == 0:
+            workflow.status = "completed"
+            logger.info(f"Workflow {workflow_id} completed successfully")
+        else:
+            workflow.status = "partially_failed"
+            logger.info(f"Workflow {workflow_id} completed with {failed} failed steps")
+    
+    db.commit()
 
 @app.get("/api/scan_results", response_model=schemas.PaginatedScanResults)
 def read_scan_results(
@@ -485,6 +528,313 @@ def httpx_scan_endpoint(req: ToolRequest, db: Session = Depends(get_db)):
     scan_req = schemas.ScanJobRequest(tool="httpx-scan", targets=req.targets, options=req.options, vpn_profile=req.vpn_profile, country=req.country)
     return create_scan(scan_req, db)
 
+@app.post("/api/scan/nuclei-scan", status_code=201)
+def nuclei_scan_endpoint(req: ToolRequest, db: Session = Depends(get_db)):
+    scan_req = schemas.ScanJobRequest(tool="nuclei-scan", targets=req.targets, options=req.options, vpn_profile=req.vpn_profile, country=req.country)
+    return create_scan(scan_req, db)
+
+@app.post("/api/scan/wpscan-scan", status_code=201)
+def wpscan_scan_endpoint(req: ToolRequest, db: Session = Depends(get_db)):
+    scan_req = schemas.ScanJobRequest(tool="wpscan-scan", targets=req.targets, options=req.options, vpn_profile=req.vpn_profile, country=req.country)
+    return create_scan(scan_req, db)
+
+# ============ Workflow API Endpoints ============
+
+@app.post("/api/scan/workflow", status_code=201)
+def create_workflow_scan(
+    req: schemas.WorkflowRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Tạo workflow job với 2 strategies:
+    - "wide": Quét tất cả targets bằng 1 tool, rồi chuyển tool khác
+    - "deep": Quét 1 target bằng tất cả tools, rồi chuyển target khác
+    """
+    # Validate tools exist
+    available_tools = [t.get("name") for t in TOOLS]
+    for step in req.steps:
+        if step.tool_id not in available_tools:
+            raise HTTPException(status_code=404, detail=f"Tool not found: {step.tool_id}")
+    
+    # Validate strategy
+    if req.strategy not in ["wide", "deep"]:
+        raise HTTPException(status_code=400, detail="Strategy must be 'wide' or 'deep'")
+    
+    # 1. Tạo workflow job tổng
+    workflow_id = f"workflow-{uuid4().hex[:8]}"
+    
+    # Calculate total steps based on strategy
+    if req.strategy == "wide":
+        # Wide: 1 job per tool (each job scans all targets)
+        total_steps = len(req.steps)
+    else:
+        # Deep: 1 job per (target + tool) combination
+        total_steps = len(req.targets) * len(req.steps)
+    
+    workflow_job = models.WorkflowJob(
+        workflow_id=workflow_id,
+        targets=req.targets,
+        strategy=req.strategy,
+        total_steps=total_steps,
+        vpn_profile=req.vpn_profile,
+        vpn_country=req.country
+    )
+    db.add(workflow_job)
+    db.commit()
+    
+    # 2. Assign VPN cho workflow (sẽ dùng chung cho tất cả steps)
+    vpn_assignment = None
+    try:
+        if req.vpn_profile:
+            # Sử dụng VPN được chỉ định
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            all_vpns = loop.run_until_complete(vpn_service.fetch_vpns())
+            
+            selected_vpn = next((vpn for vpn in all_vpns if vpn.get('filename') == req.vpn_profile), None)
+            if selected_vpn:
+                vpn_assignment = selected_vpn.copy()
+                if req.country:
+                    vpn_assignment['country'] = req.country
+            loop.close()
+        else:
+            # Random VPN assignment
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            vpns = loop.run_until_complete(vpn_service.fetch_vpns())
+            if vpns:
+                import random
+                if req.country:
+                    # Filter by country
+                    categorized = loop.run_until_complete(vpn_service.categorize_vpns_by_country(vpns))
+                    if req.country.upper() in categorized:
+                        vpns = categorized[req.country.upper()]
+                    
+                vpn_assignment = random.choice(vpns) if vpns else None
+            loop.close()
+            
+        if vpn_assignment:
+            workflow_job.vpn_assignment = vpn_assignment
+            workflow_job.vpn_country = vpn_assignment.get('country')
+            db.commit()
+            logger.info(f"Assigned VPN {vpn_assignment.get('hostname')} to workflow {workflow_id}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to assign VPN for workflow {workflow_id}: {e}")
+    
+    # 3. Tạo sub-jobs theo strategy
+    sub_jobs = []
+    failed_jobs = []
+    step_counter = 0
+    
+    if req.strategy == "wide":
+        # Wide Strategy: 1 job per tool, each job handles all targets
+        for i, step in enumerate(req.steps):
+            try:
+                step_counter += 1
+                job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
+                
+                sub_job = models.ScanJob(
+                    job_id=job_id,
+                    tool=step.tool_id,
+                    targets=req.targets,  # All targets for this tool
+                    options=step.params,
+                    workflow_id=workflow_id,
+                    step_order=step_counter,
+                    vpn_profile=req.vpn_profile,
+                    vpn_country=req.country,
+                    vpn_assignment=vpn_assignment
+                )
+                db.add(sub_job)
+                sub_jobs.append(sub_job)
+                
+                logger.info(f"Created WIDE job {job_id} for tool {step.tool_id} with {len(req.targets)} targets")
+                
+            except Exception as e:
+                logger.error(f"Failed to create wide sub-job for step {i+1}: {e}")
+                failed_jobs.append({"step": i+1, "tool": step.tool_id, "error": str(e)})
+    
+    else:  # Deep Strategy
+        # Deep Strategy: 1 job per (target + tool) combination
+        for target_idx, target in enumerate(req.targets):
+            for step_idx, step in enumerate(req.steps):
+                try:
+                    step_counter += 1
+                    job_id = f"scan-{step.tool_id}-{target.replace('.', '-').replace('/', '-')}-{uuid4().hex[:4]}"
+                    
+                    sub_job = models.ScanJob(
+                        job_id=job_id,
+                        tool=step.tool_id,
+                        targets=[target],  # Single target for this job
+                        options=step.params,
+                        workflow_id=workflow_id,
+                        step_order=step_counter,
+                        vpn_profile=req.vpn_profile,
+                        vpn_country=req.country,
+                        vpn_assignment=vpn_assignment
+                    )
+                    db.add(sub_job)
+                    sub_jobs.append(sub_job)
+                    
+                    logger.info(f"Created DEEP job {job_id} for tool {step.tool_id} with target {target}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to create deep sub-job for target {target}, tool {step.tool_id}: {e}")
+                    failed_jobs.append({
+                        "target": target, 
+                        "tool": step.tool_id, 
+                        "error": str(e)
+                    })
+    
+    db.commit()
+    
+    # 4. Submit all jobs to scanner nodes (parallel execution)
+    successful_submissions = []
+    failed_submissions = []
+    
+    for job in sub_jobs:
+        try:
+            scanner_node_url = os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
+            scanner_response, _ = call_scanner_node(
+                job.tool, 
+                job.targets, 
+                job.options, 
+                job.job_id, 
+                scanner_node_url,
+                job.vpn_profile,
+                job.vpn_country
+            )
+            
+            # Update job with scanner response
+            job.scanner_job_name = scanner_response.get("job_name")
+            job.status = "running"
+            successful_submissions.append({
+                "job_id": job.job_id,
+                "tool": job.tool,
+                "targets": job.targets,
+                "scanner_job": scanner_response.get("job_name")
+            })
+            
+            logger.info(f"Successfully submitted job {job.job_id} to scanner")
+            
+        except Exception as e:
+            logger.error(f"Failed to submit job {job.job_id}: {e}")
+            job.status = "failed"
+            job.error_message = str(e)
+            failed_submissions.append({
+                "job_id": job.job_id,
+                "tool": job.tool,
+                "targets": job.targets,
+                "error": str(e)
+            })
+    
+    # Update workflow status
+    if len(successful_submissions) > 0:
+        workflow_job.status = "running"
+    else:
+        workflow_job.status = "failed"
+    
+    db.commit()
+    
+    return {
+        "workflow_id": workflow_id,
+        "status": workflow_job.status,
+        "strategy": req.strategy,
+        "total_steps": total_steps,
+        "total_targets": len(req.targets),
+        "total_tools": len(req.steps),
+        "successful_submissions": len(successful_submissions),
+        "failed_submissions": len(failed_submissions),
+        "sub_jobs": successful_submissions,
+        "errors": failed_submissions + failed_jobs,
+        "vpn_assignment": {
+            "country": vpn_assignment.get('country') if vpn_assignment else None,
+            "hostname": vpn_assignment.get('hostname') if vpn_assignment else None
+        } if vpn_assignment else None
+    }
+
+@app.get("/api/workflows", response_model=schemas.PaginatedWorkflows)
+def get_workflows(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """Get paginated workflow jobs"""
+    query = db.query(models.WorkflowJob).order_by(models.WorkflowJob.id.desc())
+    
+    total_items = query.count()
+    import math
+    total_pages = math.ceil(total_items / page_size) if total_items > 0 else 1
+    offset = (page - 1) * page_size
+    
+    results = query.offset(offset).limit(page_size).all()
+    
+    return schemas.PaginatedWorkflows(
+        pagination=schemas.PaginationInfo(
+            total_items=total_items,
+            total_pages=total_pages,
+            current_page=page,
+            page_size=page_size,
+            has_next=page < total_pages,
+            has_previous=page > 1
+        ),
+        results=results
+    )
+
+@app.get("/api/workflows/{workflow_id}")
+def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
+    """Get workflow với sub-jobs"""
+    workflow = db.query(models.WorkflowJob).filter(
+        models.WorkflowJob.workflow_id == workflow_id
+    ).first()
+    
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    # Get sub-jobs
+    sub_jobs = db.query(models.ScanJob).filter(
+        models.ScanJob.workflow_id == workflow_id
+    ).order_by(models.ScanJob.step_order).all()
+    
+    return {
+        "workflow": workflow,
+        "sub_jobs": sub_jobs,
+        "progress": {
+            "completed": workflow.completed_steps,
+            "total": workflow.total_steps,
+            "failed": workflow.failed_steps,
+            "percentage": (workflow.completed_steps / workflow.total_steps * 100) if workflow.total_steps > 0 else 0
+        }
+    }
+
+@app.post("/api/workflows/{workflow_id}/cancel")
+def cancel_workflow(workflow_id: str, db: Session = Depends(get_db)):
+    """Cancel workflow và tất cả sub-jobs"""
+    # Cancel workflow
+    workflow = db.query(models.WorkflowJob).filter(
+        models.WorkflowJob.workflow_id == workflow_id
+    ).first()
+    
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    workflow.status = "cancelled"
+    
+    # Cancel running sub-jobs
+    sub_jobs = db.query(models.ScanJob).filter(
+        models.ScanJob.workflow_id == workflow_id,
+        models.ScanJob.status.in_(["pending", "running"])
+    ).all()
+    
+    for job in sub_jobs:
+        job.status = "cancelled"
+        # TODO: Cancel K8s job if needed
+    
+    db.commit()
+    return {"status": "cancelled", "cancelled_jobs": len(sub_jobs)}
+
 @app.get("/debug/vpn-service")
 async def debug_vpn_service():
     """Debug VPN service status"""
@@ -637,113 +987,3 @@ async def get_available_countries():
     except Exception as e:
         logger.error(f"Error getting country list: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get countries: {e}")
-
-# ============ DELETE/CLEANUP API Endpoints ============
-
-@app.delete("/api/scan_results/{result_id}")
-def delete_scan_result(result_id: int, db: Session = Depends(get_db)):
-    """
-    Xóa một scan result cụ thể theo ID.
-    """
-    result = cleanup_service.delete_scan_result(db, result_id)
-    if not result["success"]:
-        raise HTTPException(status_code=404, detail=result["error"])
-    return {"message": result["message"]}
-
-@app.delete("/api/scan_results")
-def delete_scan_results(
-    target: Optional[str] = Query(None, description="Delete results for specific target"),
-    job_id: Optional[str] = Query(None, description="Delete results for specific job_id"),
-    older_than_days: Optional[int] = Query(None, description="Delete results older than X days"),
-    confirm: bool = Query(False, description="Confirmation flag required for bulk delete"),
-    db: Session = Depends(get_db)
-):
-    """
-    Xóa scan results theo điều kiện. Yêu cầu confirm=true cho bulk delete.
-    """
-    if not confirm:
-        raise HTTPException(status_code=400, detail="Please add ?confirm=true to confirm bulk delete operation")
-    
-    result = cleanup_service.bulk_delete_scan_results(db, target, job_id, older_than_days)
-    return {
-        "message": result["message"],
-        "deleted_count": result["deleted_count"],
-        "criteria": result["criteria"]
-    }
-
-@app.delete("/api/scan_jobs/{job_id}")
-def delete_scan_job(
-    job_id: str, 
-    delete_k8s_job: bool = Query(True, description="Also delete Kubernetes job via scanner-node"),
-    db: Session = Depends(get_db)
-):
-    """
-    Xóa một scan job. Có thể xóa cả trên database và yêu cầu scanner-node xóa K8s job.
-    """
-    result = cleanup_service.delete_scan_job(db, job_id, delete_k8s_job)
-    if not result["success"]:
-        raise HTTPException(status_code=404, detail=result["error"])
-    
-    return {
-        "message": result["message"],
-        "database_deleted": result["database_deleted"],
-        "kubernetes_deletion": result["kubernetes_deletion"]
-    }
-
-@app.delete("/api/scan_jobs")
-def delete_scan_jobs(
-    status: Optional[str] = Query(None, description="Delete jobs with specific status"),
-    tool: Optional[str] = Query(None, description="Delete jobs for specific tool"),
-    older_than_days: Optional[int] = Query(None, description="Delete jobs older than X days"),
-    delete_k8s_jobs: bool = Query(False, description="Also delete associated Kubernetes jobs via scanner-node"),
-    confirm: bool = Query(False, description="Confirmation flag required for bulk delete"),
-    db: Session = Depends(get_db)
-):
-    """
-    Xóa scan jobs theo điều kiện. Có thể yêu cầu scanner-node xóa Kubernetes jobs.
-    """
-    if not confirm:
-        raise HTTPException(status_code=400, detail="Please add ?confirm=true to confirm bulk delete operation")
-    
-    result = cleanup_service.bulk_delete_scan_jobs(db, status, tool, older_than_days, delete_k8s_jobs)
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result["error"])
-    
-    response = {
-        "message": result["message"],
-        "deleted_count": result["deleted_count"],
-        "criteria": result["criteria"],
-        "database_deleted": result["database_deleted"]
-    }
-    
-    if delete_k8s_jobs:
-        response["kubernetes_deletions"] = result.get("kubernetes_deletions", [])
-        response["k8s_attempted"] = result.get("k8s_attempted", 0)
-        response["k8s_successful"] = result.get("k8s_successful", 0)
-    
-    return response
-
-@app.post("/api/cleanup")
-def cleanup_system(
-    cleanup_completed_jobs: bool = Query(True, description="Delete completed scan jobs"),
-    cleanup_failed_jobs: bool = Query(False, description="Delete failed scan jobs"),
-    cleanup_old_results: bool = Query(True, description="Delete scan results older than 30 days"),
-    cleanup_orphaned_k8s: bool = Query(True, description="Clean up orphaned Kubernetes jobs via scanner-node"),
-    confirm: bool = Query(False, description="Confirmation flag required"),
-    db: Session = Depends(get_db)
-):
-    """
-    Comprehensive system cleanup endpoint.
-    """
-    if not confirm:
-        raise HTTPException(status_code=400, detail="Please add ?confirm=true to confirm cleanup operation")
-    
-    cleanup_results = cleanup_service.system_cleanup(
-        db=db,
-        cleanup_completed_jobs=cleanup_completed_jobs,
-        cleanup_failed_jobs=cleanup_failed_jobs,
-        cleanup_old_results=cleanup_old_results,
-        cleanup_orphaned_k8s=cleanup_orphaned_k8s
-    )
-    
-    return cleanup_results

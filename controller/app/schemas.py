@@ -59,3 +59,55 @@ class PaginatedScanResults(BaseModel):
 class PaginatedScanJobs(BaseModel):
     pagination: PaginationInfo
     results: List[ScanJob]
+
+# ============ Workflow Schemas ============
+
+class WorkflowStep(BaseModel):
+    tool_id: str                     # Tool name: "dns-lookup", "port-scan", "httpx-scan", "nuclei-scan", "wpscan-scan"
+    params: Dict[str, Any] = {}      # Tool-specific parameters
+
+class WorkflowRequest(BaseModel):
+    targets: List[str]               # List of targets to scan
+    strategy: str = "wide"           # "wide" (rộng - quét tất cả IP bằng 1 tool) hoặc "deep" (sâu - quét 1 IP bằng tất cả tools)
+    steps: List[WorkflowStep]        # List of scanning steps
+    vpn_profile: Optional[str] = None # VPN profile để dùng cho tất cả steps
+    country: Optional[str] = None     # Country code cho VPN selection
+
+class WorkflowJob(BaseModel):
+    id: int
+    workflow_id: str
+    targets: List[str]
+    strategy: str
+    status: str                      # "pending", "running", "completed", "failed", "cancelled"
+    
+    # VPN Information (shared across all steps)
+    vpn_profile: Optional[str] = None
+    vpn_country: Optional[str] = None
+    vpn_assignment: Optional[Dict[str, Any]] = None
+    
+    # Progress tracking
+    total_steps: int
+    completed_steps: int
+    failed_steps: int
+    
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class WorkflowStepResult(BaseModel):
+    step_order: int
+    tool_id: str
+    job_id: str
+    status: str
+    params: Dict[str, Any]
+
+class WorkflowDetail(BaseModel):
+    workflow: WorkflowJob
+    sub_jobs: List[ScanJob]
+    progress: Dict[str, Any]
+
+class PaginatedWorkflows(BaseModel):
+    pagination: PaginationInfo
+    results: List[WorkflowJob]

@@ -29,9 +29,11 @@ RUN nuclei -update -silent
 # 4) Install Python dependencies
 WORKDIR /app
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 5) Wrapper
 COPY *.py ./
 RUN chmod +x /app/nuclei_scan.py
-ENTRYPOINT ["python3", "/app/nuclei_scan.py"]
+ENTRYPOINT ["/opt/venv/bin/python", "/app/nuclei_scan.py"]

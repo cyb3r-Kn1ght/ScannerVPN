@@ -138,6 +138,7 @@ if __name__ == "__main__":
         targets = os.getenv("TARGETS", "").split(",") if os.getenv("TARGETS") else sys.argv[1:]
         controller_url = os.getenv("CONTROLLER_CALLBACK_URL")
         job_id = os.getenv("JOB_ID")
+        workflow_id = os.getenv("WORKFLOW_ID")
         
         # Parse scan options từ environment
         options_str = os.getenv("SCAN_OPTIONS", "{}")
@@ -169,6 +170,7 @@ if __name__ == "__main__":
                         "target": result["target"],
                         "resolved_ips": [],
                         "open_ports": result["open_ports"],
+                        "workflow_id": workflow_id,
                         "scan_metadata": {
                             "tool": "port-scan",
                             "job_id": job_id,

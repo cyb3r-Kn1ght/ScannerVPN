@@ -23,7 +23,7 @@ RUN gem install wpscan
 # 3) Install Python dependencies
 WORKDIR /app
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # 4) Wrapper
 COPY *.py ./

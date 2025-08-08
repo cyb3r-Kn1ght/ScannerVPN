@@ -7,6 +7,7 @@ class ScanResultCreate(BaseModel):
     resolved_ips: List[str] = []
     open_ports: Union[List[int], List[Dict[str, Any]]] = []
     scan_metadata: Dict[str, Any] = {}
+    workflow_id: Optional[str] = None
 
 class ScanResult(ScanResultCreate):
     id: int

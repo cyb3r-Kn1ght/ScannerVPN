@@ -45,6 +45,18 @@ try:
             else:
                 logger.debug(f"Column {field_name} already exists in scan_jobs")
         
+        # Check and add workflow_id to scan_results table
+        result = conn.execute(text("PRAGMA table_info(scan_results)"))
+        result_columns = [row[1] for row in result.fetchall()]
+        
+        if "workflow_id" not in result_columns:
+            logger.info("Adding workflow_id column to scan_results table")
+            conn.execute(text("ALTER TABLE scan_results ADD COLUMN workflow_id TEXT"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_scan_results_workflow_id ON scan_results(workflow_id)"))
+            conn.commit()
+        else:
+            logger.debug("workflow_id column already exists in scan_results")
+        
         # Check if workflow_jobs table exists
         result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='workflow_jobs'"))
         workflow_table_exists = result.fetchone() is not None
@@ -130,6 +142,7 @@ def create_scan_result(
         resolved_ips=payload.resolved_ips,
         open_ports=payload.open_ports,
         scan_metadata=payload.scan_metadata,
+        workflow_id=payload.workflow_id
     )
     db.add(db_obj)
     
@@ -212,8 +225,8 @@ def read_scan_results(
         query = query.filter(models.ScanResult.scan_metadata.op('->>')('job_id') == job_id)
     
     if workflow_id:
-        # Filter by workflow_id in scan_metadata JSON field
-        query = query.filter(models.ScanResult.scan_metadata.op('->>')('workflow_id') == workflow_id)
+        # Filter by direct workflow_id field instead of JSON metadata
+        query = query.filter(models.ScanResult.workflow_id == workflow_id)
     
     # Sort by timestamp
     if latest:

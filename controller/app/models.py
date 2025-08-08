@@ -14,6 +14,7 @@ class ScanResult(Base):
     resolved_ips = Column(JSON)
     open_ports = Column(JSON)
     scan_metadata = Column("metadata", JSON)
+    workflow_id = Column(String, index=True, nullable=True)  # Direct workflow_id field
 
 class ScanJob(Base):
     __tablename__ = "scan_jobs"

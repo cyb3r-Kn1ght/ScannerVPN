@@ -10,6 +10,6 @@ RUN apt-get update && \
 RUN gem install wpscan
 
 # 3) Wrapper
-COPY wpscan_scan.py /app/
+COPY *.py /app/
 RUN chmod +x /app/wpscan_scan.py
 ENTRYPOINT ["python3", "/app/wpscan_scan.py"]

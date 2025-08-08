@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.httpx.txt
 
 # copy binary httpx từ stage trước
 COPY --from=builder /go/bin/httpx /usr/local/bin/httpx
-COPY httpx_scan.py ./
+COPY *.py ./
 
 # dùng user không root
 USER 1000:1000

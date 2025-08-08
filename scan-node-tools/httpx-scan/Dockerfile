@@ -24,7 +24,7 @@ RUN apt-get update && \
 # Nếu httpx_scan.py có thêm lib Python (ví dụ ujson), liệt kê trong requirements.txt
 WORKDIR /app
 COPY requirements.httpx.txt ./
-RUN pip install --no-cache-dir --break-system-packages -r requirements.httpx.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # copy binary httpx từ stage trước
 COPY --from=builder /go/bin/httpx /usr/local/bin/httpx

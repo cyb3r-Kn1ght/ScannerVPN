@@ -29,7 +29,7 @@ RUN nuclei -update -silent
 # 4) Install Python dependencies
 WORKDIR /app
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # 5) Wrapper
 COPY *.py ./

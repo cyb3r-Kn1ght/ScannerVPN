@@ -1011,3 +1011,104 @@ async def get_available_countries():
     except Exception as e:
         logger.error(f"Error getting country list: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get countries: {e}")
+
+@app.delete("/api/database/clear")
+async def clear_all_database_tables():
+    """
+    Xóa toàn bộ dữ liệu từ tất cả các bảng trong database.
+    Cẩn thận: Thao tác này không thể hoàn tác!
+    """
+    try:
+        with database.SessionLocal() as db:
+            # Đếm số lượng records trước khi xóa
+            workflow_count = db.query(models.WorkflowJob).count()
+            scan_job_count = db.query(models.ScanJob).count()
+            scan_result_count = db.query(models.ScanResult).count()
+            
+            logger.info(f"Clearing database: {workflow_count} workflows, {scan_job_count} scan jobs, {scan_result_count} scan results")
+            
+            # Xóa theo thứ tự để tránh foreign key constraints
+            # 1. Xóa scan results trước (không có foreign key dependencies)
+            db.query(models.ScanResult).delete()
+            
+            # 2. Xóa scan jobs (có foreign key từ workflow_jobs)
+            db.query(models.ScanJob).delete()
+            
+            # 3. Xóa workflow jobs cuối cùng
+            db.query(models.WorkflowJob).delete()
+            
+            db.commit()
+            
+            logger.info("Database cleared successfully")
+            return {
+                "status": "success",
+                "message": "All database tables cleared successfully",
+                "deleted_counts": {
+                    "workflows": workflow_count,
+                    "scan_jobs": scan_job_count,
+                    "scan_results": scan_result_count
+                }
+            }
+    
+    except Exception as e:
+        logger.error(f"Error clearing database: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear database: {e}")
+
+@app.delete("/api/database/clear/scan_results")
+async def clear_scan_results_only():
+    """
+    Xóa chỉ bảng scan_results, giữ lại workflows và scan_jobs.
+    """
+    try:
+        with database.SessionLocal() as db:
+            result_count = db.query(models.ScanResult).count()
+            
+            logger.info(f"Clearing scan_results table: {result_count} records")
+            
+            db.query(models.ScanResult).delete()
+            db.commit()
+            
+            logger.info("Scan results cleared successfully")
+            return {
+                "status": "success",
+                "message": "Scan results table cleared successfully",
+                "deleted_count": result_count
+            }
+    
+    except Exception as e:
+        logger.error(f"Error clearing scan results: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear scan results: {e}")
+
+@app.delete("/api/database/clear/workflows")
+async def clear_workflows_and_jobs():
+    """
+    Xóa workflows và scan_jobs, giữ lại scan_results.
+    """
+    try:
+        with database.SessionLocal() as db:
+            workflow_count = db.query(models.WorkflowJob).count()
+            scan_job_count = db.query(models.ScanJob).count()
+            
+            logger.info(f"Clearing workflows and jobs: {workflow_count} workflows, {scan_job_count} scan jobs")
+            
+            # Xóa scan jobs trước (có foreign key từ workflow_jobs)
+            db.query(models.ScanJob).delete()
+            
+            # Xóa workflow jobs
+            db.query(models.WorkflowJob).delete()
+            
+            db.commit()
+            
+            logger.info("Workflows and jobs cleared successfully")
+            return {
+                "status": "success",
+                "message": "Workflows and scan jobs cleared successfully",
+                "deleted_counts": {
+                    "workflows": workflow_count,
+                    "scan_jobs": scan_job_count
+                }
+            }
+    
+    except Exception as e:
+        logger.error(f"Error clearing workflows and jobs: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear workflows and jobs: {e}")

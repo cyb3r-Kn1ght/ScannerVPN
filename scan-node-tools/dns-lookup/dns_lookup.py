@@ -108,6 +108,7 @@ if __name__ == "__main__":
         targets = os.getenv("TARGETS", "").split(",") if os.getenv("TARGETS") else sys.argv[1:]
         controller_url = os.getenv("CONTROLLER_CALLBACK_URL")
         job_id = os.getenv("JOB_ID")
+        workflow_id = os.getenv("WORKFLOW_ID")
         
         print(f"DNS Lookup scan starting for targets: {targets}")
         
@@ -131,6 +132,7 @@ if __name__ == "__main__":
                         "target": result["target"],
                         "resolved_ips": result["resolved_ips"],
                         "open_ports": [],
+                        "workflow_id": workflow_id,
                         "scan_metadata": {
                             "tool": "dns-lookup",
                             "job_id": job_id,

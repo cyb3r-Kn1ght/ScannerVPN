@@ -20,7 +20,12 @@ RUN apt-get update && \
 # 2) Cài wpscan gem
 RUN gem install wpscan
 
-# 3) Wrapper
-COPY *.py /app/
-RUN chmod +x /app/wpscan_scan.py
-ENTRYPOINT ["python3", "/app/wpscan_scan.py"]
+# 3) Install Python dependencies
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# 4) Wrapper
+COPY *.py ./
+RUN chmod +x ./wpscan_scan.py
+ENTRYPOINT ["python3", "./wpscan_scan.py"]

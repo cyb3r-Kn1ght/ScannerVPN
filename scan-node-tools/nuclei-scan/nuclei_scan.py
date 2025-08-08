@@ -113,6 +113,7 @@ if __name__ == "__main__":
         targets = os.getenv("TARGETS", "").split(",") if os.getenv("TARGETS") else sys.argv[1:]
         controller_url = os.getenv("CONTROLLER_CALLBACK_URL")
         job_id = os.getenv("JOB_ID")
+        workflow_id = os.getenv("WORKFLOW_ID")
         
         # Parse scan options từ environment
         options_str = os.getenv("SCAN_OPTIONS", "{}")
@@ -150,6 +151,7 @@ if __name__ == "__main__":
                 for result in all_results:
                     payload = {
                         "target": result["target"],
+                        "workflow_id": workflow_id,
                         "vulnerabilities": result["vulnerabilities"],
                         "vulnerability_count": result["vulnerability_count"],
                         "scan_metadata": {

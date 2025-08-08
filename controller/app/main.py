@@ -297,7 +297,9 @@ def create_scan(
         tool=req.tool,
         targets=req.targets,
         options=req.options,
-        status="submitted"
+        status="submitted",
+        vpn_profile=req.vpn_profile,
+        vpn_country=req.country
     )
     db.add(db_job)
     db.commit()
@@ -305,11 +307,19 @@ def create_scan(
     # 3. Gửi request tới Scanner Node API
     try:
         scanner_node_url = os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
-        scanner_response = call_scanner_node(req.tool, req.targets, req.options, job_id, scanner_node_url, req.vpn_profile, req.country)
+        scanner_response, vpn_assignment = call_scanner_node(req.tool, req.targets, req.options, job_id, scanner_node_url, req.vpn_profile, req.country)
         
-        # 4. Cập nhật job status
+        # 4. Cập nhật job status và VPN info
         db_job.scanner_job_name = scanner_response.get("job_name")
         db_job.status = "running"
+        
+        # Lưu VPN assignment info nếu có
+        if vpn_assignment:
+            db_job.vpn_hostname = vpn_assignment.get('hostname')
+            db_job.vpn_assignment = vpn_assignment
+            if not db_job.vpn_country and vpn_assignment.get('country'):
+                db_job.vpn_country = vpn_assignment.get('country')
+        
         db.commit()
         
         logger.info(f"Scan job {job_id} submitted to scanner node: {scanner_response}")
@@ -410,7 +420,7 @@ def call_scanner_node(tool: str, targets: List[str], options: Dict[str, Any], jo
         timeout=30
     )
     response.raise_for_status()
-    return response.json()
+    return response.json(), vpn_assignment
 
 # Schema riêng cho payload mỗi tool
 class ToolRequest(BaseModel):

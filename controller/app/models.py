@@ -25,5 +25,12 @@ class ScanJob(Base):
     status = Column(String, default="pending")  # pending, submitted, running, completed, failed
     scanner_job_name = Column(String, nullable=True)
     error_message = Column(String, nullable=True)
+    
+    # VPN Information
+    vpn_profile = Column(String, nullable=True)  # VPN filename được assign
+    vpn_country = Column(String, nullable=True)  # Country code (VN, JP, KR, etc.)
+    vpn_hostname = Column(String, nullable=True)  # VPN server hostname
+    vpn_assignment = Column(JSON, nullable=True)  # Full VPN assignment metadata
+    
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

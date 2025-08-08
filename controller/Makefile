@@ -27,6 +27,7 @@ help:
 	@echo "  make rebuild             Clean, build and redeploy"
 	@echo "  make port-forward-external   External port forwarding"
 	@echo "  make logs-recent-job     View most recent scan job logs"
+	@echo "  make migrate             Run database migration"
 
 build:
 	@echo "🔨 Building Controller image..."
@@ -179,4 +180,21 @@ logs-recent-job:
 	else \
 		echo "No jobs found"; \
 	fi
+
+migrate:
+	@echo "🔄 Running database migration..."
+	python3 migrate_add_vpn_fields.py
+	@echo "✅ Migration completed"
+
+test-scan-with-vpn:
+	@echo "🧪 Testing scan with VPN info display..."
+	@echo "Submitting scan job:"
+	curl -X POST http://10.102.199.42:8000/api/scan/dns-lookup \
+		-H "Content-Type: application/json" \
+		-d '{"targets":["google.com","github.com"],"vpn_profile":"103.57.130.113.ovpn","country":"JP"}' \
+		-w "\n"
+	@echo "Waiting 5 seconds for job completion..."
+	sleep 5
+	@echo "Getting recent jobs with VPN info:"
+	curl -X GET "http://10.102.199.42:8000/api/scan_jobs?page=1&page_size=3" | jq '.'
 	

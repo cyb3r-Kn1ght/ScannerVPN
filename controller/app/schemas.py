@@ -31,6 +31,13 @@ class ScanJob(BaseModel):
     status: str
     scanner_job_name: Optional[str] = None
     error_message: Optional[str] = None
+    
+    # VPN Information
+    vpn_profile: Optional[str] = None
+    vpn_country: Optional[str] = None
+    vpn_hostname: Optional[str] = None
+    vpn_assignment: Optional[Dict[str, Any]] = None
+    
     created_at: datetime
     updated_at: datetime
 

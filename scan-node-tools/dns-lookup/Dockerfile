@@ -1,6 +1,16 @@
 FROM ubuntu:22.04
+# Copy VPN manager và scan script
+COPY vpn_manager.py ./
+COPY dns_lookup.py ./
+COPY requirements.txt ./
 
-ENV DEBIAN_FRONTEND=noninteractive
+# Install Python dependencies
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Entry point sẽ setup VPN trước khi scan
+ENTRYPOINT ["/opt/venv/bin/python", "dns_lookup.py"]FRONTEND=noninteractive
 
 # Cài đặt dependencies cho VPN và DNS scanning
 RUN apt update && apt install -y \
@@ -24,7 +34,9 @@ COPY dns_lookup.py ./
 COPY requirements.txt ./
 
     # Install Python dependencies
-    RUN pip3 install --no-cache-dir -r requirements.txt
+    RUN python3 -m venv /opt/venv
+    ENV PATH="/opt/venv/bin:$PATH"
+    RUN pip install --no-cache-dir -r requirements.txt
     
     # Entry point sẽ setup VPN trước khi scan
-ENTRYPOINT ["python3", "dns_lookup.py"]
+ENTRYPOINT ["/opt/venv/bin/python", "dns_lookup.py"]

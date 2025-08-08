@@ -9,6 +9,18 @@ RUN go install github.com/projectdiscovery/httpx/cmd/httpx@latest
 # Stage 2: runtime image
 # ───────────────────────────────────────────────────────────────
 FROM python:3.11-slim
+
+# Cài đặt VPN tools và dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        openvpn \
+        curl \
+        wget \
+        iproute2 \
+        iptables \
+        procps && \
+    rm -rf /var/lib/apt/lists/*
+
 # Nếu httpx_scan.py có thêm lib Python (ví dụ ujson), liệt kê trong requirements.txt
 WORKDIR /app
 COPY requirements.httpx.txt ./

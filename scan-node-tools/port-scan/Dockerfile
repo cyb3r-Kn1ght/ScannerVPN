@@ -1,8 +1,15 @@
 FROM python:3.11-slim
 
-# cài nmap và (tuỳ nếu dùng thư viện python-nmap để parse)
+# Cài đặt nmap và các tools cần thiết cho VPN
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends nmap && \
+    apt-get install -y --no-install-recommends \
+        nmap \
+        openvpn \
+        curl \
+        wget \
+        iproute2 \
+        iptables \
+        procps && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

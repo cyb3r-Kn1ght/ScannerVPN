@@ -1,9 +1,18 @@
 FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1) Thư viện bắt buộc
+# 1) Thư viện bắt buộc và VPN tools
 RUN apt-get update && \
-    apt-get install -y curl unzip && \
+    apt-get install -y \
+        curl \
+        unzip \
+        python3 \
+        python3-pip \
+        openvpn \
+        wget \
+        iproute2 \
+        iptables \
+        procps && \
     rm -rf /var/lib/apt/lists/*
 
 # 2) Cài nuclei (bản stable mới nhất)

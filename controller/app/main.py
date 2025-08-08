@@ -142,7 +142,13 @@ def create_scan_result(
         resolved_ips=payload.resolved_ips,
         open_ports=payload.open_ports,
         scan_metadata=payload.scan_metadata,
-        workflow_id=payload.workflow_id
+        workflow_id=payload.workflow_id,
+        # Tool-specific result fields
+        http_responses=payload.http_responses,
+        vulnerabilities=payload.vulnerabilities,
+        wordpress_info=payload.wordpress_info,
+        dns_records=payload.dns_records,
+        tool_results=payload.tool_results
     )
     db.add(db_obj)
     

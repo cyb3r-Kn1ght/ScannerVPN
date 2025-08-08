@@ -9,6 +9,7 @@ RUN apt-get update && \
         zlib1g-dev \
         python3 \
         python3-pip \
+        python3.10-venv \
         openvpn \
         curl \
         wget \

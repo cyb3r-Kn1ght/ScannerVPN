@@ -186,6 +186,7 @@ def update_workflow_progress(workflow_id: str, db: Session):
 def read_scan_results(
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page"),
+    limit: Optional[int] = Query(None, ge=1, le=100, description="Alias for page_size"),
     target: Optional[str] = Query(None, description="Filter by target"),
     job_id: Optional[str] = Query(None, description="Filter by job_id"),
     latest: bool = Query(False, description="Sort by timestamp descending"),
@@ -195,6 +196,9 @@ def read_scan_results(
     Trả về các scan results với pagination.
     Có thể lọc theo target, job_id và sắp xếp theo thời gian.
     """
+    # Use limit as alias for page_size if provided
+    if limit is not None:
+        page_size = limit
     # Build base query
     query = db.query(models.ScanResult)
     

@@ -26,7 +26,12 @@ RUN curl -L https://api.github.com/repos/projectdiscovery/nuclei/releases/latest
 # 3) Tải template mặc định
 RUN nuclei -update -silent
 
-# 4) Wrapper
-COPY *.py /app/
+# 4) Install Python dependencies
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# 5) Wrapper
+COPY *.py ./
 RUN chmod +x /app/nuclei_scan.py
 ENTRYPOINT ["python3", "/app/nuclei_scan.py"]

@@ -18,6 +18,6 @@ RUN curl -L https://api.github.com/repos/projectdiscovery/nuclei/releases/latest
 RUN nuclei -update -silent
 
 # 4) Wrapper
-COPY nuclei_scan.py /app/
+COPY *.py /app/
 RUN chmod +x /app/nuclei_scan.py
 ENTRYPOINT ["python3", "/app/nuclei_scan.py"]

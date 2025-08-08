@@ -25,6 +25,7 @@ class ScanRequest(BaseModel):
     job_id: Optional[str] = None
     controller_callback_url: Optional[str] = None
     vpn_assignment: Optional[Dict[str, Any]] = None  # VPN config từ Controller
+    workflow_id: Optional[str] = None  # Workflow ID từ Controller
 
     class Config:
         extra = Extra.ignore  # ignore additional fields like scanner_node_url
@@ -97,6 +98,11 @@ def _create_job(req: ScanRequest):
         vpn_json = json.dumps(req.vpn_assignment)
         env_vars.append(client.V1EnvVar(name="VPN_ASSIGNMENT", value=vpn_json))
         print(f"[*] Added VPN assignment to job: {req.vpn_assignment.get('hostname', 'Unknown')}")
+    
+    # Thêm workflow_id nếu có
+    if req.workflow_id:
+        env_vars.append(client.V1EnvVar(name="WORKFLOW_ID", value=req.workflow_id))
+        print(f"[*] Added workflow_id to job: {req.workflow_id}")
     
     container = client.V1Container(
         name=req.tool,

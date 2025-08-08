@@ -189,12 +189,13 @@ def read_scan_results(
     limit: Optional[int] = Query(None, ge=1, le=100, description="Alias for page_size"),
     target: Optional[str] = Query(None, description="Filter by target"),
     job_id: Optional[str] = Query(None, description="Filter by job_id"),
+    workflow_id: Optional[str] = Query(None, description="Filter by workflow_id"),
     latest: bool = Query(False, description="Sort by timestamp descending"),
     db: Session = Depends(get_db)
 ):
     """
     Trả về các scan results với pagination.
-    Có thể lọc theo target, job_id và sắp xếp theo thời gian.
+    Có thể lọc theo target, job_id, workflow_id và sắp xếp theo thời gian.
     """
     # Use limit as alias for page_size if provided
     if limit is not None:
@@ -209,6 +210,10 @@ def read_scan_results(
     if job_id:
         # Filter by job_id in scan_metadata JSON field
         query = query.filter(models.ScanResult.scan_metadata.op('->>')('job_id') == job_id)
+    
+    if workflow_id:
+        # Filter by workflow_id in scan_metadata JSON field
+        query = query.filter(models.ScanResult.scan_metadata.op('->>')('workflow_id') == workflow_id)
     
     # Sort by timestamp
     if latest:
@@ -419,7 +424,7 @@ def create_scan(
         db.commit()
         raise HTTPException(status_code=500, detail=f"Failed to submit scan to scanner node: {e}")
 
-def call_scanner_node(tool: str, targets: List[str], options: Dict[str, Any], job_id: str, scanner_url: str, vpn_profile: str = None, country: str = None):
+def call_scanner_node(tool: str, targets: List[str], options: Dict[str, Any], job_id: str, scanner_url: str, vpn_profile: str = None, country: str = None, workflow_id: str = None):
     """
     Gọi Scanner Node API để thực hiện scan với VPN assignment.
     """
@@ -498,7 +503,8 @@ def call_scanner_node(tool: str, targets: List[str], options: Dict[str, Any], jo
         "options": options,
         "job_id": job_id,
         "controller_callback_url": os.getenv("CONTROLLER_CALLBACK_URL", "http://controller:8000"),
-        "vpn_assignment": vpn_assignment
+        "vpn_assignment": vpn_assignment,
+        "workflow_id": workflow_id
     }
     
     response = httpx.post(
@@ -708,7 +714,8 @@ def create_workflow_scan(
                 job.job_id, 
                 scanner_node_url,
                 job.vpn_profile,
-                job.vpn_country
+                job.vpn_country,
+                job.workflow_id
             )
             
             # Update job with scanner response

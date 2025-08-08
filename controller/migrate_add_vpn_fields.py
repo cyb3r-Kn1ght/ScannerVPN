@@ -9,11 +9,32 @@ import os
 def migrate_database():
     """Add VPN fields to scan_jobs table"""
     
-    # Database path
-    db_path = os.getenv("DATABASE_PATH", "scan_results.db")
-    if not os.path.exists(db_path):
-        print(f"Database {db_path} not found - will be created on first run")
-        return
+    # Database path - check multiple locations
+    possible_paths = [
+        os.getenv("DATABASE_PATH", "scan_results.db"),
+        "/data/scan_results.db",  # Container path
+        "scan_results.db",        # Local path
+        "./scan_results.db"       # Current directory
+    ]
+    
+    db_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            db_path = path
+            break
+    
+    if not db_path:
+        # Use container path if running in container
+        if os.path.exists("/data"):
+            db_path = "/data/scan_results.db"
+        else:
+            db_path = "scan_results.db"
+        print(f"Database not found, will create at: {db_path}")
+    else:
+        print(f"Using existing database: {db_path}")
+    
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()

@@ -15,8 +15,41 @@ from app.vpn_service import VPNService
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Tạo bảng nếu chưa có
-models.Base.metadata.create_all(bind=database.engine)
+# Tạo bảng nếu chưa có và migrate schema nếu cần
+try:
+    # Tạo tables nếu chưa có (không drop existing)
+    models.Base.metadata.create_all(bind=database.engine)
+    logger.info("Ensured all tables exist")
+    
+    # Check và migrate VPN fields nếu chưa có
+    from sqlalchemy import text
+    with database.engine.connect() as conn:
+        # Check if vpn_profile column exists
+        result = conn.execute(text("PRAGMA table_info(scan_jobs)"))
+        columns = [row[1] for row in result.fetchall()]
+        
+        vpn_fields = [
+            ("vpn_profile", "TEXT"),
+            ("vpn_country", "TEXT"), 
+            ("vpn_hostname", "TEXT"),
+            ("vpn_assignment", "TEXT")
+        ]
+        
+        for field_name, field_type in vpn_fields:
+            if field_name not in columns:
+                logger.info(f"Adding missing column: {field_name}")
+                conn.execute(text(f"ALTER TABLE scan_jobs ADD COLUMN {field_name} {field_type}"))
+                conn.commit()
+            else:
+                logger.debug(f"Column {field_name} already exists")
+        
+        logger.info("Database schema migration completed")
+        
+except Exception as e:
+    logger.error(f"Database setup/migration error: {e}")
+    # Fallback: create tables normally if migration fails
+    models.Base.metadata.create_all(bind=database.engine)
+    logger.info("Fallback: Created tables with current schema")
 
 # Khởi tạo VPN Service
 vpn_service = VPNService()

@@ -24,7 +24,7 @@ COPY dns_lookup.py ./
 COPY requirements.txt ./
 
 # Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Entry point sẽ setup VPN trước khi scan
 ENTRYPOINT ["python3", "dns_lookup.py"]

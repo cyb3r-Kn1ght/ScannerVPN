@@ -7,9 +7,11 @@ import yaml
 import os
 from uuid import uuid4
 from pydantic import BaseModel
+from datetime import datetime
 
 from app import models, schemas, database
 from app.vpn_service import VPNService
+from app.cleanup_service import CleanupService
 
 # Thiết lập logging
 logging.basicConfig(level=logging.INFO)
@@ -53,6 +55,11 @@ except Exception as e:
 
 # Khởi tạo VPN Service
 vpn_service = VPNService()
+
+# Khởi tạo Cleanup Service
+cleanup_service = CleanupService(
+    scanner_node_url=os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
+)
 
 app = FastAPI(
     title="Scanner Controller",
@@ -630,3 +637,113 @@ async def get_available_countries():
     except Exception as e:
         logger.error(f"Error getting country list: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get countries: {e}")
+
+# ============ DELETE/CLEANUP API Endpoints ============
+
+@app.delete("/api/scan_results/{result_id}")
+def delete_scan_result(result_id: int, db: Session = Depends(get_db)):
+    """
+    Xóa một scan result cụ thể theo ID.
+    """
+    result = cleanup_service.delete_scan_result(db, result_id)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return {"message": result["message"]}
+
+@app.delete("/api/scan_results")
+def delete_scan_results(
+    target: Optional[str] = Query(None, description="Delete results for specific target"),
+    job_id: Optional[str] = Query(None, description="Delete results for specific job_id"),
+    older_than_days: Optional[int] = Query(None, description="Delete results older than X days"),
+    confirm: bool = Query(False, description="Confirmation flag required for bulk delete"),
+    db: Session = Depends(get_db)
+):
+    """
+    Xóa scan results theo điều kiện. Yêu cầu confirm=true cho bulk delete.
+    """
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Please add ?confirm=true to confirm bulk delete operation")
+    
+    result = cleanup_service.bulk_delete_scan_results(db, target, job_id, older_than_days)
+    return {
+        "message": result["message"],
+        "deleted_count": result["deleted_count"],
+        "criteria": result["criteria"]
+    }
+
+@app.delete("/api/scan_jobs/{job_id}")
+def delete_scan_job(
+    job_id: str, 
+    delete_k8s_job: bool = Query(True, description="Also delete Kubernetes job via scanner-node"),
+    db: Session = Depends(get_db)
+):
+    """
+    Xóa một scan job. Có thể xóa cả trên database và yêu cầu scanner-node xóa K8s job.
+    """
+    result = cleanup_service.delete_scan_job(db, job_id, delete_k8s_job)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["error"])
+    
+    return {
+        "message": result["message"],
+        "database_deleted": result["database_deleted"],
+        "kubernetes_deletion": result["kubernetes_deletion"]
+    }
+
+@app.delete("/api/scan_jobs")
+def delete_scan_jobs(
+    status: Optional[str] = Query(None, description="Delete jobs with specific status"),
+    tool: Optional[str] = Query(None, description="Delete jobs for specific tool"),
+    older_than_days: Optional[int] = Query(None, description="Delete jobs older than X days"),
+    delete_k8s_jobs: bool = Query(False, description="Also delete associated Kubernetes jobs via scanner-node"),
+    confirm: bool = Query(False, description="Confirmation flag required for bulk delete"),
+    db: Session = Depends(get_db)
+):
+    """
+    Xóa scan jobs theo điều kiện. Có thể yêu cầu scanner-node xóa Kubernetes jobs.
+    """
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Please add ?confirm=true to confirm bulk delete operation")
+    
+    result = cleanup_service.bulk_delete_scan_jobs(db, status, tool, older_than_days, delete_k8s_jobs)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    response = {
+        "message": result["message"],
+        "deleted_count": result["deleted_count"],
+        "criteria": result["criteria"],
+        "database_deleted": result["database_deleted"]
+    }
+    
+    if delete_k8s_jobs:
+        response["kubernetes_deletions"] = result.get("kubernetes_deletions", [])
+        response["k8s_attempted"] = result.get("k8s_attempted", 0)
+        response["k8s_successful"] = result.get("k8s_successful", 0)
+    
+    return response
+
+@app.post("/api/cleanup")
+def cleanup_system(
+    cleanup_completed_jobs: bool = Query(True, description="Delete completed scan jobs"),
+    cleanup_failed_jobs: bool = Query(False, description="Delete failed scan jobs"),
+    cleanup_old_results: bool = Query(True, description="Delete scan results older than 30 days"),
+    cleanup_orphaned_k8s: bool = Query(True, description="Clean up orphaned Kubernetes jobs via scanner-node"),
+    confirm: bool = Query(False, description="Confirmation flag required"),
+    db: Session = Depends(get_db)
+):
+    """
+    Comprehensive system cleanup endpoint.
+    """
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Please add ?confirm=true to confirm cleanup operation")
+    
+    cleanup_results = cleanup_service.system_cleanup(
+        db=db,
+        cleanup_completed_jobs=cleanup_completed_jobs,
+        cleanup_failed_jobs=cleanup_failed_jobs,
+        cleanup_old_results=cleanup_old_results,
+        cleanup_orphaned_k8s=cleanup_orphaned_k8s
+    )
+    
+    return cleanup_results

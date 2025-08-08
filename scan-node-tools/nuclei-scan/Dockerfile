@@ -8,6 +8,7 @@ RUN apt-get update && \
         unzip \
         python3 \
         python3-pip \
+        python3.10-venv \
         openvpn \
         wget \
         iproute2 \

@@ -37,9 +37,9 @@ build-tools:
 	@eval $$(minikube docker-env); docker build --no-cache -t $(REGISTRY)/dns-lookup:$(TAG) ../scan-node-tools/dns-lookup
 	@eval $$(minikube docker-env); docker build --no-cache -t $(REGISTRY)/port-scan:$(TAG) ../scan-node-tools/port-scan
 	@eval $$(minikube docker-env); docker build --no-cache -t $(REGISTRY)/httpx-scan:$(TAG) ../scan-node-tools/httpx-scan
-	@eval $$(minikube docker-env); docker build --no-cache -t $(REGISTRY)/nuclei-scan:$(TAG) scan-node-tools/nuclei-scan
-	@eval $$(minikube docker-env); docker build --no-cache -t $(REGISTRY)/wpscan-scan:$(TAG) scan-node-tools/wpscan-scan
-	@eval $$(minikube docker-env); docker build --no-cache -t $(REGISTRY)/dirsearch-scan:$(TAG) scan-node-tools/dirsearch-scan
+	@eval $$(minikube docker-env); docker build --no-cache -t $(REGISTRY)/nuclei-scan:$(TAG) ../scan-node-tools/nuclei-scan
+	@eval $$(minikube docker-env); docker build --no-cache -t $(REGISTRY)/wpscan-scan:$(TAG) ../scan-node-tools/wpscan-scan
+	@eval $$(minikube docker-env); docker build --no-cache -t $(REGISTRY)/dirsearch-scan:$(TAG) ../scan-node-tools/dirsearch-scan
 	@echo "✅ All scan tools built"
 
 build-all: build-scanner build-tools

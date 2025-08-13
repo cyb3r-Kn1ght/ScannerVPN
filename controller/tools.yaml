@@ -18,3 +18,7 @@ tools:
   - name: wpscan-scan
     image: nguyenminhnguyen/wpscan-scan:latest
     args: ["--url"]
+
+  - name: dirsearch-scan
+    image: nguyenminhnguyen/dirsearch-scan:latest
+    args: ["--url"]

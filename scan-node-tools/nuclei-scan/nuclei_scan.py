@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import argparse, subprocess, sys, json
+import argparse, subprocess, sys, json, os, requests
+from vpn_manager import VPNManager
 
 SEV_ORDER = {"info":0, "low":1, "medium":2, "high":3, "critical":4}
 
@@ -88,93 +89,221 @@ def build_cmd(args, json_flag):
 #   --compact `
 #   --min-severity info 
 
-parser = argparse.ArgumentParser(description="Wrapper Nuclei -> JSONL (compact option)")
-# Target
-parser.add_argument("--target", help="URL/IP 1 mục tiêu")
-parser.add_argument("--list-file", help="File danh sách mục tiêu, mỗi dòng 1 URL/IP")
-# Templates / filter
-parser.add_argument("--tags")
-parser.add_argument("--severity")
-parser.add_argument("--templates")
-parser.add_argument("--workflows")
-parser.add_argument("--exclude-templates")
-parser.add_argument("--exclude-tags")
-parser.add_argument("--exclude-severity")
-# Hiệu năng
-parser.add_argument("--rate-limit", type=int)
-parser.add_argument("--concurrency", type=int)
-# Output kiểm soát
-parser.add_argument("--compact", action="store_true", help="In JSONL tối giản cho pentest")
-parser.add_argument("--min-severity", default="info", help="Ngưỡng tối thiểu khi --compact (vd: medium)")
-parser.add_argument("--strip-http", action="store_true", help="Bỏ request/response/curl-command trong output đầy đủ")
-args = parser.parse_args()
-
-if not args.target and not args.list_file:
-    print(json.dumps({"error":"missing --target or --list-file"})); sys.exit(2)
-
-json_flag = pick_json_flag()
-cmd = build_cmd(args, json_flag)
-
-# Chạy streaming, chỉ xử lý các dòng JSON hợp lệ
-p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
-
-dedupe = set()  # chống trùng (id, matched-at)
-err_text = []
-
-try:
-    for line in p.stdout:
-        line = line.strip()
-        if not line:
-            continue
+if __name__ == "__main__":
+    print("[*] Starting Nuclei scan with VPN...")
+    
+    # Setup VPN trước khi scan
+    vpn_manager = VPNManager()
+    vpn_connected = False
+    network_info = {}
+    
+    # Lấy VPN assignment từ Controller (nếu có)
+    assigned_vpn = None
+    controller_url = os.getenv("CONTROLLER_CALLBACK_URL")
+    vpn_assignment = os.getenv("VPN_ASSIGNMENT")  # VPN được assign từ Controller
+    
+    if vpn_assignment:
         try:
-            rec = json.loads(line)
-        except Exception:
-            # bỏ qua dòng không phải JSON (bảng update index, banner…)
-            continue
+            assigned_vpn = json.loads(vpn_assignment)
+            print(f"[*] Received VPN assignment from Controller: {assigned_vpn.get('hostname', 'Unknown')}")
+        except json.JSONDecodeError as e:
+            print(f"[!] Failed to parse VPN assignment: {e}")
+    
+    # Thử setup VPN (optional - có thể skip nếu proxy server không available)
+    try:
+        print("[*] Checking initial network status...")
+        initial_info = vpn_manager.get_network_info()
+        print(f"[*] Initial IP: {initial_info['public_ip']}")
+        
+        # Sử dụng assigned VPN nếu có, nếu không thì dùng random
+        if assigned_vpn:
+            if vpn_manager.setup_specific_vpn(assigned_vpn):
+                print(f"[+] Connected to assigned VPN: {assigned_vpn.get('hostname', 'Unknown')}")
+                vpn_manager.print_vpn_status()
+                network_info = vpn_manager.get_network_info()
+                vpn_connected = True
+            else:
+                print("[!] Failed to connect to assigned VPN, trying random...")
+                if vpn_manager.setup_random_vpn():
+                    print("[+] Connected to random VPN as fallback!")
+                    vpn_manager.print_vpn_status()
+                    network_info = vpn_manager.get_network_info()
+                    vpn_connected = True
+        else:
+            # Fallback to random VPN nếu không có assignment
+            print("[*] No VPN assignment from Controller, using random VPN...")
+            if vpn_manager.setup_random_vpn():
+                print("[+] VPN setup completed!")
+                vpn_manager.print_vpn_status()
+                network_info = vpn_manager.get_network_info()
+                vpn_connected = True
+            else:
+                print("[!] VPN connection failed, continuing without VPN...")
+    except Exception as e:
+        print(f"[!] VPN setup error: {e}, continuing without VPN...")
 
-        # Tuỳ chọn lọc & tối giản
-        if args.compact:
-            info = rec.get("info", {}) or {}
-            sev  = (info.get("severity") or "").lower()
-            if not sev_ok(sev, args.min_severity):
-                continue
-            out = {
-                "id": rec.get("template-id"),
-                "name": info.get("name"),
-                "sev": sev,
-                "host": rec.get("host"),
-                "url": rec.get("url"),
-                "matched": rec.get("matched-at") or rec.get("url"),
-            }
-            # bằng chứng/evidence: extracted-results nếu có
-            if rec.get("extracted-results"):
-                out["evidence"] = rec["extracted-results"]
-            # chống trùng theo (id, matched)
-            key = (out.get("id"), out.get("matched"))
-            if key in dedupe:
-                continue
-            dedupe.add(key)
-            print(json.dumps(out, ensure_ascii=False))
-            continue
+    try:
+        # Parse arguments và targets
+        parser = argparse.ArgumentParser(description="Wrapper Nuclei -> JSONL (compact option)")
+        # Target
+        parser.add_argument("--target", help="URL/IP 1 mục tiêu")
+        parser.add_argument("--list-file", help="File danh sách mục tiêu, mỗi dòng 1 URL/IP")
+        # Templates / filter
+        parser.add_argument("--tags")
+        parser.add_argument("--severity")
+        parser.add_argument("--templates")
+        parser.add_argument("--workflows")
+        parser.add_argument("--exclude-templates")
+        parser.add_argument("--exclude-tags")
+        parser.add_argument("--exclude-severity")
+        # Hiệu năng
+        parser.add_argument("--rate-limit", type=int)
+        parser.add_argument("--concurrency", type=int)
+        # Output kiểm soát
+        parser.add_argument("--compact", action="store_true", help="In JSONL tối giản cho pentest")
+        parser.add_argument("--min-severity", default="info", help="Ngưỡng tối thiểu khi --compact (vd: medium)")
+        parser.add_argument("--strip-http", action="store_true", help="Bỏ request/response/curl-command trong output đầy đủ")
+        
+        # Lấy targets từ environment hoặc arguments
+        targets_env = os.getenv("TARGETS", "").split(",") if os.getenv("TARGETS") else []
+        targets_env = [t.strip() for t in targets_env if t.strip()]
+        
+        if targets_env:
+            # Tạo temporary file với targets để Nuclei đọc
+            with open('/tmp/targets.txt', 'w') as f:
+                for target in targets_env:
+                    f.write(f"{target}\n")
+            sys.argv.extend(['--list-file', '/tmp/targets.txt'])
+        
+        args = parser.parse_args()
 
-        # Chế độ đầy đủ: có thể strip HTTP
-        if args.strip_http:
-            for k in ("request", "response", "curl-command"):
-                if k in rec:
-                    del rec[k]
-        print(json.dumps(rec, ensure_ascii=False))
+        if not args.target and not args.list_file:
+            print(json.dumps({"error":"missing --target or --list-file"})); 
+            sys.exit(2)
 
-    p.wait()
-finally:
-    # gom stderr (nếu fail)
-    err_text = p.stderr.read().strip().splitlines() if p.stderr else []
+        # Chạy Nuclei scan
+        job_id = os.getenv("JOB_ID")
+        workflow_id = os.getenv("WORKFLOW_ID")
+        
+        print(f"[*] Starting Nuclei scan...")
+        print(f"[*] Job ID: {job_id}")
+        print(f"[*] Workflow ID: {workflow_id}")
+        
+        json_flag = pick_json_flag()
+        cmd = build_cmd(args, json_flag)
+        
+        print(f"[*] Running command: {' '.join(cmd)}")
+        
+        # Chạy streaming, chỉ xử lý các dòng JSON hợp lệ
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
 
-rc = p.returncode
-# Nuclei: 0 (không phát hiện), 1 (có phát hiện) → đều là success
-if rc not in (0, 1):
-    print(json.dumps({
-        "error":"nuclei failed",
-        "code": rc,
-        "stderr": "\n".join(err_text)
-    }, ensure_ascii=False))
-    sys.exit(rc)
+        dedupe = set()  # chống trùng (id, matched-at)
+        err_text = []
+        scan_results = []
+
+        try:
+            for line in p.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    # bỏ qua dòng không phải JSON (bảng update index, banner…)
+                    continue
+
+                # Tuỳ chọn lọc & tối giản
+                if args.compact:
+                    info = rec.get("info", {}) or {}
+                    sev  = (info.get("severity") or "").lower()
+                    if not sev_ok(sev, args.min_severity):
+                        continue
+                    out = {
+                        "id": rec.get("template-id"),
+                        "name": info.get("name"),
+                        "sev": sev,
+                        "host": rec.get("host"),
+                        "url": rec.get("url"),
+                        "matched": rec.get("matched-at") or rec.get("url"),
+                    }
+                    # bằng chứng/evidence: extracted-results nếu có
+                    if rec.get("extracted-results"):
+                        out["evidence"] = rec["extracted-results"]
+                    # chống trùng theo (id, matched)
+                    key = (out.get("id"), out.get("matched"))
+                    if key in dedupe:
+                        continue
+                    dedupe.add(key)
+                    print(json.dumps(out, ensure_ascii=False))
+                    scan_results.append(out)
+                    continue
+
+                # Chế độ đầy đủ: có thể strip HTTP
+                if args.strip_http:
+                    for k in ("request", "response", "curl-command"):
+                        if k in rec:
+                            del rec[k]
+                print(json.dumps(rec, ensure_ascii=False))
+                scan_results.append(rec)
+
+            p.wait()
+        finally:
+            # gom stderr (nếu fail)
+            err_text = p.stderr.read().strip().splitlines() if p.stderr else []
+
+        rc = p.returncode
+        # Nuclei: 0 (không phát hiện), 1 (có phát hiện) → đều là success
+        if rc not in (0, 1):
+            print(json.dumps({
+                "error":"nuclei failed",
+                "code": rc,
+                "stderr": "\n".join(err_text)
+            }, ensure_ascii=False))
+            sys.exit(rc)
+            
+        # Gửi kết quả về Controller nếu có callback URL
+        if controller_url and targets_env:
+            try:
+                for target in targets_env:
+                    # Tìm các kết quả liên quan đến target này
+                    target_results = []
+                    for result in scan_results:
+                        if target in str(result.get("host", "")) or target in str(result.get("url", "")):
+                            target_results.append(result)
+                    
+                    payload = {
+                        "target": target,
+                        "resolved_ips": [],
+                        "open_ports": [],
+                        "workflow_id": workflow_id,
+                        "scan_metadata": {
+                            "tool": "nuclei-scan",
+                            "job_id": job_id,
+                            "vpn_used": vpn_connected,
+                            "scan_ip": network_info.get("public_ip", "Unknown"),
+                            "vpn_local_ip": network_info.get("local_ip"),
+                            "tun_interface": network_info.get("tun_interface", False),
+                            "nuclei_results": target_results,
+                            "total_findings": len(target_results)
+                        }
+                    }
+                    print(f"[*] Sending result to Controller for {target}: {len(target_results)} findings")
+                    response = requests.post(f"{controller_url}/api/scan_results", json=payload, timeout=30)
+                    print(f"[*] Controller response: {response.status_code}")
+            except Exception as e:
+                print(f"[!] Error sending results to Controller: {e}")
+        
+        print(f"[*] Nuclei scan completed. Total findings: {len(scan_results)}")
+        
+    finally:
+        # Cleanup VPN
+        if vpn_connected:
+            print("[*] Disconnecting VPN...")
+            vpn_manager.disconnect_vpn()
+        
+        # Cleanup temp files
+        try:
+            if os.path.exists('/tmp/targets.txt'):
+                os.remove('/tmp/targets.txt')
+        except:
+            pass

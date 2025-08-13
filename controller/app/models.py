@@ -15,13 +15,6 @@ class ScanResult(Base):
     open_ports = Column(JSON)
     scan_metadata = Column("metadata", JSON)
     workflow_id = Column(String, index=True, nullable=True)  # Direct workflow_id field
-    
-    # Tool-specific result fields
-    http_responses = Column(JSON, nullable=True)  # For httpx-scan results
-    vulnerabilities = Column(JSON, nullable=True)  # For nuclei-scan results
-    wordpress_info = Column(JSON, nullable=True)  # For wpscan results
-    dns_records = Column(JSON, nullable=True)     # For dns-lookup results
-    tool_results = Column(JSON, nullable=True)    # Generic tool results field
 
 class ScanJob(Base):
     __tablename__ = "scan_jobs"

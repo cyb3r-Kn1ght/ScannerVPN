@@ -17,7 +17,7 @@ class VPNManager:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"[!] Lỗi khi fetch VPN list: {e}")
+            print(f"[VPN] Không lấy được danh sách VPN: {e}")
             return []
     
     def download_vpn(self, filename):
@@ -28,47 +28,38 @@ class VPNManager:
             vpn_path = f"/tmp/{filename}"
             with open(vpn_path, "wb") as f:
                 f.write(r.content)
+            print(f"[VPN] Đã tải file cấu hình: {filename}")
             return vpn_path
         except Exception as e:
-            print(f"[!] Lỗi khi download VPN {filename}: {e}")
+            print(f"[VPN] Lỗi tải file cấu hình {filename}: {e}")
             return None
     
     def connect_vpn(self, vpn_file):
         """Kết nối VPN với network configuration"""
-        print(f"[+] Kết nối VPN: {vpn_file}")
+        print(f"[VPN] Đang kết nối: {os.path.basename(vpn_file)}")
         try:
-            # Thêm các options để force routing qua VPN
             self.vpn_process = subprocess.Popen([
                 "openvpn", "--config", vpn_file,
                 "--data-ciphers", "AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC",
-                "--redirect-gateway", "def1",  # Force all traffic through VPN
-                "--pull-filter", "ignore", "redirect-gateway",  # Ignore server redirect-gateway
-                "--pull-filter", "accept", "route",  # Accept routes from server
+                "--redirect-gateway", "def1",
+                "--pull-filter", "ignore", "redirect-gateway",
+                "--pull-filter", "accept", "route",
                 "--script-security", "2",
                 "--verb", "3"
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
-            # Đợi VPN kết nối (tối đa 30 giây)
-            for i in range(30):
+            for _ in range(30):
                 if self.is_vpn_connected():
-                    print("[+] VPN đã kết nối thành công!")
-                    
-                    # Setup routing manually để đảm bảo traffic đi qua VPN
+                    print("[VPN] Đã kết nối thành công!")
                     self._setup_vpn_routing()
-                    
-                    # Đợi thêm 10 giây cho routing stabilize
-                    print("[*] Đợi routing tables cập nhật...")
-                    time.sleep(10)
-                    
+                    print("[VPN] Routing OK.")
+                    time.sleep(2)
                     return True
                 time.sleep(1)
-                
-            print("[!] VPN không thể kết nối trong 30 giây")
+            print("[VPN] Không thể kết nối (timeout)")
             self.disconnect_vpn()
             return False
-            
         except Exception as e:
-            print(f"[!] Lỗi khi kết nối VPN: {e}")
+            print(f"[VPN] Lỗi kết nối: {e}")
             return False
     
     def is_vpn_connected(self):
@@ -82,125 +73,58 @@ class VPNManager:
             return False
     
     def _setup_vpn_routing(self):
-        """Setup routing để force external traffic qua VPN nhưng giữ Kubernetes internal"""
         try:
-            print("[*] Thiết lập VPN routing...")
-            
-            # Backup và preserve Kubernetes DNS
-            k8s_dns_servers = ["10.96.0.10"]  # Kubernetes DNS service
-            
-            # Lấy thông tin về Kubernetes cluster network
-            k8s_network = "10.244.0.0/16"  # Typical Kubernetes pod network
-            k8s_service_network = "10.96.0.0/12"  # Typical Kubernetes service network
-            
-            # Lấy VPN gateway IP
-            result = subprocess.run(['ip', 'route', 'show', 'dev', 'tun0'], 
-                                  capture_output=True, text=True)
-            
+            result = subprocess.run(['ip', 'route', 'show', 'dev', 'tun0'], capture_output=True, text=True)
             if result.returncode == 0 and result.stdout.strip():
-                # Backup original default route
-                orig_route = subprocess.run(['ip', 'route', 'show', 'default'], 
-                                          capture_output=True, text=True)
-                print(f"[*] Original default route: {orig_route.stdout.strip()}")
-                
-                # Setup DNS for VPN
                 self._setup_vpn_dns()
-                
-                # Get VPN gateway from tun0 routes
                 tun_routes = result.stdout.strip().split('\n')
                 vpn_gateway = None
                 for route in tun_routes:
                     if 'via' in route:
                         vpn_gateway = route.split('via')[1].split()[0]
                         break
-                
                 if vpn_gateway:
-                    print(f"[*] VPN Gateway: {vpn_gateway}")
-                    
-                    # Preserve Kubernetes internal routes
-                    subprocess.run(['ip', 'route', 'add', k8s_network, 'via', '10.244.0.1', 'dev', 'eth0'], 
-                                 capture_output=True)
-                    subprocess.run(['ip', 'route', 'add', k8s_service_network, 'via', '10.244.0.1', 'dev', 'eth0'], 
-                                 capture_output=True)
-                    
-                    # Add specific routes for external traffic through VPN
-                    external_targets = [
-                        "8.8.8.8",
-                        "8.8.4.4", 
-                        "1.1.1.1",
-                        "142.250.0.0/16",  # Google IPs
-                        "172.217.0.0/16"   # Google IPs
-                    ]
-                    
-                    for target in external_targets:
-                        subprocess.run(['ip', 'route', 'add', target, 'via', vpn_gateway, 'dev', 'tun0'], 
-                                     capture_output=True)
-                        print(f"[*] Added route for {target} via VPN")
-                
-                print("[+] VPN routing setup completed - external traffic via VPN, internal via eth0")
+                    subprocess.run(['ip', 'route', 'add', '10.244.0.0/16', 'via', '10.244.0.1', 'dev', 'eth0'], capture_output=True)
+                    subprocess.run(['ip', 'route', 'add', '10.96.0.0/12', 'via', '10.244.0.1', 'dev', 'eth0'], capture_output=True)
+                    for target in ["8.8.8.8", "8.8.4.4", "1.1.1.1", "142.250.0.0/16", "172.217.0.0/16"]:
+                        subprocess.run(['ip', 'route', 'add', target, 'via', vpn_gateway, 'dev', 'tun0'], capture_output=True)
+                # Chỉ log thành công hoặc lỗi chính
             else:
-                print("[!] Không tìm thấy VPN gateway")
-                
+                print("[VPN] Không tìm thấy VPN gateway")
         except Exception as e:
-            print(f"[!] Lỗi setup VPN routing: {e}")
+            print(f"[VPN] Lỗi setup routing: {e}")
     
     def _setup_vpn_dns(self):
-        """Setup DNS để work với VPN"""
         try:
-            print("[*] Setting up VPN DNS...")
-            
-            # Backup original resolv.conf
-            subprocess.run(['cp', '/etc/resolv.conf', '/etc/resolv.conf.backup'], 
-                         capture_output=True)
-            
-            # Get original Kubernetes DNS for backup
+            subprocess.run(['cp', '/etc/resolv.conf', '/etc/resolv.conf.backup'], capture_output=True)
             original_dns = ""
             try:
                 with open('/etc/resolv.conf.backup', 'r') as f:
                     original_dns = f.read()
             except:
                 pass
-            
-            # Create new resolv.conf with both VPN DNS and Kubernetes DNS
-            dns_config = """# VPN + Kubernetes DNS - Hybrid Config
-nameserver 10.96.0.10
-nameserver 8.8.8.8
-nameserver 8.8.4.4
-search scan-system.svc.cluster.local svc.cluster.local cluster.local
-options timeout:2 attempts:3 rotate
-"""
-            
-            # If we have original K8s DNS, preserve it too
+            dns_config = """nameserver 10.96.0.10\nnameserver 8.8.8.8\nnameserver 8.8.4.4\n"""
             if "nameserver 10.96.0.10" not in original_dns and "nameserver" in original_dns:
-                # Extract original nameservers
                 for line in original_dns.split('\n'):
                     if line.startswith('nameserver') and '10.96.0.10' not in line:
                         dns_config += line + '\n'
-            
             with open('/etc/resolv.conf', 'w') as f:
                 f.write(dns_config)
-            
-            print("[+] DNS setup completed - K8s DNS first, then VPN DNS")
-            
         except Exception as e:
-            print(f"[!] Error setting up DNS: {e}")
+            print(f"[VPN] Lỗi setup DNS: {e}")
     
     def disconnect_vpn(self):
         """Ngắt kết nối VPN và restore DNS"""
         if self.vpn_process and self.vpn_process.poll() is None:
-            print("[*] Ngắt kết nối VPN...")
+            print("[VPN] Ngắt kết nối.")
             self.vpn_process.terminate()
             try:
                 self.vpn_process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 self.vpn_process.kill()
             self.vpn_process = None
-            
-            # Restore original DNS
             try:
-                subprocess.run(['mv', '/etc/resolv.conf.backup', '/etc/resolv.conf'], 
-                             capture_output=True)
-                print("[*] DNS restored")
+                subprocess.run(['mv', '/etc/resolv.conf.backup', '/etc/resolv.conf'], capture_output=True)
             except:
                 pass
     
@@ -463,12 +387,6 @@ options timeout:2 attempts:3 rotate
         return info
     
     def print_vpn_status(self):
-        """In trạng thái VPN hiện tại"""
         info = self.get_network_info()
-        print(f"[*] === VPN Status ===")
-        print(f"[*] Public IP: {info['public_ip']}")
-        print(f"[*] TUN Interface: {'✓' if info['tun_interface'] else '✗'}")
-        print(f"[*] Local VPN IP: {info['local_ip'] or 'N/A'}")
-        print(f"[*] Default Route: {info['default_route'] or 'N/A'}")
-        print(f"[*] VPN Process: {'Running' if self.vpn_process and self.vpn_process.poll() is None else 'Stopped'}")
+        print(f"[VPN] Public IP: {info['public_ip']} | TUN: {'Y' if info['tun_interface'] else 'N'} | Local: {info['local_ip'] or '-'}")
         return info

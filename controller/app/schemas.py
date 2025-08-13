@@ -6,16 +6,6 @@ class ScanResultCreate(BaseModel):
     target: str
     resolved_ips: List[str] = []
     open_ports: Union[List[int], List[Dict[str, Any]]] = []
-    
-    # Tool-specific result fields
-    http_responses: List[Dict[str, Any]] = []       # HTTPx scan results
-    vulnerabilities: List[Dict[str, Any]] = []      # Nuclei scan findings
-    wordpress_info: Optional[Dict[str, Any]] = None # WPScan WordPress details
-    dns_records: Optional[Dict[str, Any]] = None    # DNS lookup additional records
-    
-    # Generic field for any additional tool results
-    tool_results: Dict[str, Any] = {}
-    
     scan_metadata: Dict[str, Any] = {}
     workflow_id: Optional[str] = None
 

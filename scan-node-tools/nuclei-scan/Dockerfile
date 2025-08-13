@@ -1,40 +1,34 @@
 FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1) Thư viện bắt buộc và VPN tools
-RUN apt-get update && \
-    apt-get install -y \
-        curl \
-        unzip \
-        python3 \
-        python3-pip \
-        python3.10-venv \
-        openvpn \
-        wget \
-        iproute2 \
-        iptables \
-        procps && \
-    rm -rf /var/lib/apt/lists/*
+# Base deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git unzip build-essential wget python3 python3-minimal \
+    && rm -rf /var/lib/apt/lists/*
 
-# 2) Cài nuclei (bản stable mới nhất)
-RUN curl -L https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
-    | grep browser_download_url | grep linux_amd64.zip | cut -d '"' -f 4 \
-    | xargs curl -L -o nuclei.zip && \
-    unzip nuclei.zip -d /usr/local/bin && \
-    chmod +x /usr/local/bin/nuclei && \
-    rm nuclei.zip
+# Cài Go (chọn bản ổn, đủ mới để build nuclei)
+ARG GO_VERSION=1.21.10
+RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz \
+ && tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz \
+ && ln -s /usr/local/go/bin/go /usr/local/bin/go \
+ && rm go${GO_VERSION}.linux-amd64.tar.gz
 
-# 3) Tải template mặc định
-RUN nuclei -update -silent
+# Build nuclei từ source (qua Go module proxy, ít lỗi hơn gọi API GitHub)
+ENV GOPATH=/root/go
+RUN GO111MODULE=on go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
+ && mv /root/go/bin/nuclei /usr/local/bin/nuclei \
+ && rm -rf /root/go /usr/local/go
 
-# 4) Install Python dependencies
+# Clone templates vào chỗ cố định
+RUN git clone --depth=1 https://github.com/projectdiscovery/nuclei-templates /root/nuclei-templates \
+ && mkdir -p /root/.local \
+ && ln -sf /root/nuclei-templates /root/.local/nuclei-templates
+
+# (tuỳ) đồng bộ chỉ mục templates
+RUN nuclei -ut -silent || true
+
+# Wrapper
 WORKDIR /app
-COPY requirements.txt ./
-RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 5) Wrapper
-COPY *.py ./
+COPY nuclei_scan.py /app/nuclei_scan.py
 RUN chmod +x /app/nuclei_scan.py
 ENTRYPOINT ["/opt/venv/bin/python", "/app/nuclei_scan.py"]

@@ -16,18 +16,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Tạo bảng nếu chưa có và migrate schema nếu cần
+
+# --- MIGRATE metadata column in scan_results to JSON if needed (for httpx-scan compatibility) ---
 try:
-    # Tạo tables nếu chưa có (không drop existing)
     models.Base.metadata.create_all(bind=database.engine)
     logger.info("Ensured all tables exist")
-    
-    # Check và migrate VPN fields nếu chưa có
     from sqlalchemy import text
     with database.engine.connect() as conn:
-        # Check if vpn_profile column exists in scan_jobs
+        # Check and migrate scan_jobs columns (giữ nguyên như cũ)
         result = conn.execute(text("PRAGMA table_info(scan_jobs)"))
         columns = [row[1] for row in result.fetchall()]
-        
         vpn_fields = [
             ("vpn_profile", "TEXT"),
             ("vpn_country", "TEXT"), 
@@ -36,7 +34,6 @@ try:
             ("workflow_id", "TEXT"),
             ("step_order", "INTEGER")
         ]
-        
         for field_name, field_type in vpn_fields:
             if field_name not in columns:
                 logger.info(f"Adding missing column to scan_jobs: {field_name}")
@@ -44,11 +41,12 @@ try:
                 conn.commit()
             else:
                 logger.debug(f"Column {field_name} already exists in scan_jobs")
-        
+
         # Check and add workflow_id to scan_results table
         result = conn.execute(text("PRAGMA table_info(scan_results)"))
         result_columns = [row[1] for row in result.fetchall()]
-        
+        col_types = {row[1]: row[2] for row in result.fetchall()}
+
         if "workflow_id" not in result_columns:
             logger.info("Adding workflow_id column to scan_results table")
             conn.execute(text("ALTER TABLE scan_results ADD COLUMN workflow_id TEXT"))
@@ -56,22 +54,50 @@ try:
             conn.commit()
         else:
             logger.debug("workflow_id column already exists in scan_results")
-        
+
+        # --- MIGRATE metadata column to JSON if needed ---
+        # SQLite: type is 'TEXT' or 'JSON' (should be JSON)
+        result = conn.execute(text("PRAGMA table_info(scan_results)"))
+        meta_type = None
+        for row in result.fetchall():
+            if row[1] == "metadata":
+                meta_type = row[2]
+        if meta_type and meta_type.upper() != "JSON":
+            logger.warning(f"Migrating scan_results.metadata column from {meta_type} to JSON for httpx-scan compatibility!")
+            # SQLite không hỗ trợ ALTER COLUMN, phải tạo bảng mới và copy dữ liệu
+            conn.execute(text("ALTER TABLE scan_results RENAME TO scan_results_old"))
+            conn.execute(text("""
+                CREATE TABLE scan_results (
+                    id INTEGER PRIMARY KEY,
+                    timestamp DATETIME,
+                    target TEXT,
+                    resolved_ips JSON,
+                    open_ports JSON,
+                    metadata JSON,
+                    workflow_id TEXT
+                )
+            """))
+            conn.execute(text("""
+                INSERT INTO scan_results (id, timestamp, target, resolved_ips, open_ports, metadata, workflow_id)
+                SELECT id, timestamp, target, resolved_ips, open_ports, metadata, workflow_id FROM scan_results_old
+            """))
+            conn.execute(text("DROP TABLE scan_results_old"))
+            conn.commit()
+            logger.info("scan_results.metadata column migrated to JSON!")
+        else:
+            logger.info("scan_results.metadata column is already JSON")
+
         # Check if workflow_jobs table exists
         result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='workflow_jobs'"))
         workflow_table_exists = result.fetchone() is not None
-        
         if not workflow_table_exists:
             logger.info("Creating workflow_jobs table...")
             # Table will be created by create_all() below
         else:
             logger.debug("workflow_jobs table already exists")
-        
         logger.info("Database schema migration completed")
-        
 except Exception as e:
     logger.error(f"Database setup/migration error: {e}")
-    # Fallback: create tables normally if migration fails
     models.Base.metadata.create_all(bind=database.engine)
     logger.info("Fallback: Created tables with current schema")
 

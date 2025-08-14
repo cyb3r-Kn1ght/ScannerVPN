@@ -13,7 +13,10 @@ def scan(target, options=None):
     # Parse options for port scanning
     ports = "1000"  # default
     scan_type = "-sS"  # default SYN scan
-    
+    # Default timeouts
+    default_timeout = 300
+    full_scan_timeout = 900
+    # Allow override via options or env
     if options:
         if options.get("ports"):
             ports = options["ports"]
@@ -21,11 +24,25 @@ def scan(target, options=None):
             scan_type = options["scan_type"]
         if options.get("all_ports"):
             ports = "-"  # scan all ports
-    
+        if options.get("timeout"):
+            try:
+                default_timeout = int(options["timeout"])
+                full_scan_timeout = int(options["timeout"])
+            except Exception:
+                pass
+    # Allow override via env
+    env_timeout = os.getenv("PORTSCAN_TIMEOUT")
+    if env_timeout:
+        try:
+            default_timeout = int(env_timeout)
+            full_scan_timeout = int(env_timeout)
+        except Exception:
+            pass
     # Thử SYN scan trước, nếu fail thì fallback sang TCP connect scan
     temp_fd, temp_path = tempfile.mkstemp(suffix='.xml')
     os.close(temp_fd)
-    
+    # Choose timeout
+    timeout = full_scan_timeout if ports == "-" else default_timeout
     try:
         # Thử scan type được chỉ định (cần root cho SYN scan)
         if ports == "-":
@@ -34,13 +51,11 @@ def scan(target, options=None):
             cmd = ['nmap', scan_type, '--top-ports', ports, '-oX', temp_path, target]
         else:
             cmd = ['nmap', scan_type, '-p', ports, '-oX', temp_path, target]
-            
-        print(f"[*] Running nmap command: {' '.join(cmd[:4])}... {target}")
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
-        
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        print(f"[*] Running nmap command: {' '.join(cmd)} (timeout={timeout}s)")
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(f"[!] Nmap command timed out after {timeout}s: {' '.join(cmd)}")
         # Fallback sang TCP connect scan (không cần root)
-        print("[!] SYN scan failed, falling back to TCP connect scan...")
         try:
             if ports == "-":
                 cmd = ['nmap', '-sT', '-p-', '-oX', temp_path, target]
@@ -48,7 +63,32 @@ def scan(target, options=None):
                 cmd = ['nmap', '-sT', '--top-ports', ports, '-oX', temp_path, target]
             else:
                 cmd = ['nmap', '-sT', '-p', ports, '-oX', temp_path, target]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+            print(f"[*] Running fallback nmap command: {' '.join(cmd)} (timeout={timeout}s)")
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            print(f"[!] Fallback nmap command timed out after {timeout}s: {' '.join(cmd)}")
+            os.remove(temp_path)
+            return {'open_ports': []}
+        except Exception as e:
+            print(f"[!] Both scan methods failed: {e}")
+            os.remove(temp_path)
+            return {'open_ports': []}
+    except subprocess.CalledProcessError as e:
+        print(f"[!] Nmap command failed: {e}")
+        # Fallback sang TCP connect scan (không cần root)
+        try:
+            if ports == "-":
+                cmd = ['nmap', '-sT', '-p-', '-oX', temp_path, target]
+            elif ports.isdigit():
+                cmd = ['nmap', '-sT', '--top-ports', ports, '-oX', temp_path, target]
+            else:
+                cmd = ['nmap', '-sT', '-p', ports, '-oX', temp_path, target]
+            print(f"[*] Running fallback nmap command: {' '.join(cmd)} (timeout={timeout}s)")
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            print(f"[!] Fallback nmap command timed out after {timeout}s: {' '.join(cmd)}")
+            os.remove(temp_path)
+            return {'open_ports': []}
         except Exception as e:
             print(f"[!] Both scan methods failed: {e}")
             os.remove(temp_path)

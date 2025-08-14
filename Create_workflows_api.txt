@@ -1,0 +1,66 @@
+{
+  "targets": [
+    "http://testphp.vulnweb.com",
+    "https://example.com"
+  ],
+  "strategy": "wide/deep(chưa có logic)",
+  "vpn_profile": "103.57.130.113.ovpn",
+  "country": "JP",
+  "steps": [
+    {
+      "tool_id": "dns-lookup",
+      "params": {}
+    },
+    {
+      "tool_id": "port-scan",
+      "params": {}
+    },
+    {
+      "tool_id": "httpx-scan",
+      "params": {
+        "follow_redirects": true,
+        "timeout": 10,
+        "threads": 20
+      }
+    },
+    {
+      "tool_id": "nuclei-scan",
+      "params": {
+        "target": "",                // (nếu muốn override target)
+        "list_file": "",             // (nếu muốn override file target)
+        "tags": "xss,sqli",
+        "severity": "medium,high,critical",
+        "templates": "/root/nuclei-templates/http",
+        "workflows": "",
+        "exclude_templates": "",
+        "exclude_tags": "",
+        "exclude_severity": "",
+        "rate_limit": 15,
+        "concurrency": 10,
+        "compact": true,
+        "min_severity": "medium",
+        "strip_http": false
+      }
+    },
+    {
+      "tool_id": "wpscan-scan",
+      "params": {
+        "enumerate": "u,vp,vt,cb",
+        "api_token": "your_wpscan_api_token"
+      }
+    },
+    {
+      "tool_id": "dirsearch-scan",
+      "params": {
+        "url": "",                   // (nếu muốn override target)
+        "url_file": "",              // (nếu muốn override file target)
+        "threads": 10,
+        "recursive": true,
+        "wordlist": "/opt/dirsearch/db/dicc.txt",
+        "include_status": "200,204,301,302,307,401,403",
+        "extensions": "php,js,txt",
+        "no_extensions": false
+      }
+    }
+  ]
+}

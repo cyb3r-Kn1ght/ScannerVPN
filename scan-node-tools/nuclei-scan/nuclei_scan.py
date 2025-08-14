@@ -303,7 +303,12 @@ if __name__ == "__main__":
                     target_results = []
                     for result in scan_results:
                         if target in str(result.get("host", "")) or target in str(result.get("url", "")):
-                            target_results.append(result)
+                            # Luôn loại bỏ trường response/request/curl-command nếu có
+                            filtered = dict(result)
+                            for k in ("response"):
+                                if k in filtered:
+                                    del filtered[k]
+                            target_results.append(filtered)
                     has_findings = bool(target_results)
                     payload = {
                         "target": target,

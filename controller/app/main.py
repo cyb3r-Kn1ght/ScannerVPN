@@ -941,22 +941,116 @@ def get_workflows(
 
 @app.get("/api/workflows/{workflow_id}")
 def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
-    """Get workflow với sub-jobs"""
+    """Get workflow với sub-jobs, tổng hợp kết quả từng tool (nuclei: trường chung + extra_fields)"""
     workflow = db.query(models.WorkflowJob).filter(
         models.WorkflowJob.workflow_id == workflow_id
     ).first()
-    
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    
+
     # Get sub-jobs
     sub_jobs = db.query(models.ScanJob).filter(
         models.ScanJob.workflow_id == workflow_id
     ).order_by(models.ScanJob.step_order).all()
-    
+
+    # Lấy kết quả từng sub-job (ScanResult)
+    job_ids = [job.job_id for job in sub_jobs]
+    results_by_job = {}
+    if job_ids:
+        scan_results = db.query(models.ScanResult).filter(
+            models.ScanResult.scan_metadata.op('->>')('job_id').in_(job_ids)
+        ).all()
+        for r in scan_results:
+            job_id = r.scan_metadata.get('job_id')
+            if job_id not in results_by_job:
+                results_by_job[job_id] = []
+            results_by_job[job_id].append(r)
+
+    def nuclei_flatten(find):
+        # Trường chung
+        info = find.get('info', {}) or {}
+        out = {
+            "template": find.get("template"),
+            "template-id": find.get("template-id"),
+            "template-url": find.get("template-url"),
+            "name": info.get("name"),
+            "severity": info.get("severity"),
+            "tags": info.get("tags"),
+            "host": find.get("host"),
+            "ip": find.get("ip"),
+            "port": find.get("port"),
+            "type": find.get("type"),
+            "timestamp": find.get("timestamp"),
+            "matcher-status": find.get("matcher-status"),
+        }
+        # Trường phụ
+        extra = {}
+        for k, v in find.items():
+            if k not in out and k not in ("info",):
+                extra[k] = v
+        if extra:
+            out["extra_fields"] = extra
+        return out
+
+    def portscan_flatten(r):
+        # open_ports là list dict
+        return [
+            {"ip": r.target, "port": p.get("port"), "service": p.get("service"), "protocol": p.get("protocol"), "version": p.get("version", "")}
+            for p in (r.open_ports or [])
+        ]
+
+    def dns_flatten(r):
+        return {"target": r.target, "resolved_ips": r.resolved_ips}
+
+    def httpx_flatten(r):
+        meta = r.scan_metadata or {}
+        return meta.get("httpx_results") or []
+
+    def dirsearch_flatten(r):
+        meta = r.scan_metadata or {}
+        return meta.get("dirsearch_results") or []
+
+    def wpscan_flatten(r):
+        meta = r.scan_metadata or {}
+        return meta.get("wpscan_results") or []
+
+    tool_result_map = {
+        "nuclei-scan": lambda r: [nuclei_flatten(f) for f in (r.scan_metadata.get("nuclei_results") or [])],
+        "port-scan": portscan_flatten,
+        "dns-lookup": lambda r: [dns_flatten(r)],
+        "httpx-scan": httpx_flatten,
+        "dirsearch-scan": dirsearch_flatten,
+        "wpscan-scan": wpscan_flatten,
+    }
+
+    sub_job_details = []
+    for job in sub_jobs:
+        job_id = job.job_id
+        tool = job.tool
+        job_results = results_by_job.get(job_id, [])
+        # Tổng hợp kết quả cho từng tool
+        results = []
+        if tool in tool_result_map:
+            for r in job_results:
+                results.extend(tool_result_map[tool](r))
+        else:
+            # fallback: trả raw scan_metadata
+            for r in job_results:
+                results.append(r.scan_metadata)
+
+        job_detail = {
+            "job_id": job_id,
+            "tool": tool,
+            "status": job.status,
+            "step_order": job.step_order,
+            "error_message": job.error_message,
+            "results": results,
+        }
+        sub_job_details.append(job_detail)
+
     return {
         "workflow": workflow,
-        "sub_jobs": sub_jobs,
+        "sub_jobs": sub_job_details,
         "progress": {
             "completed": workflow.completed_steps,
             "total": workflow.total_steps,

@@ -161,6 +161,7 @@ if __name__ == "__main__":
         if controller_url and all_results:
             try:
                 for result in all_results:
+                    has_findings = bool(result["all_endpoints"])
                     payload = {
                         "target": result["target"],
                         "resolved_ips": [],
@@ -168,6 +169,7 @@ if __name__ == "__main__":
                         "workflow_id": workflow_id,
                         "http_metadata": result["metadata"],
                         "http_endpoints": result["all_endpoints"],
+                        "has_findings": has_findings,
                         "scan_metadata": {
                             "tool": "httpx-scan",
                             "job_id": job_id,

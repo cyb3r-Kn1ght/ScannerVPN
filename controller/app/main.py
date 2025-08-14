@@ -122,10 +122,142 @@ with open(TOOLS_FILE, 'r') as f:
 @app.get("/api/tools")
 def list_tools():
     """
-    Trả về danh sách các tool, bao gồm name, image, description, args.
+    Trả về danh sách các tool, bao gồm id, name, description, fields (dùng cho form frontend).
     """
-    logger.info(f"API call to /api/tools, returning {len(TOOLS)} tools")
-    return {"tools": TOOLS}
+    logger.info(f"API call to /api/tools, returning {len(TOOLS)} tools (frontend format)")
+
+    # Mapping for each tool to frontend form format
+    tool_form_map = {
+        "port-scan": {
+            "id": "port-scan",
+            "name": "Quét Cổng (Port Scan)",
+            "description": "Sử dụng Nmap để phát hiện các cổng đang mở trên mục tiêu.",
+            "fields": [
+                {
+                    "name": "all_ports",
+                    "label": "Quét toàn bộ 65535 cổng",
+                    "component": "Switch",
+                    "defaultValue": False
+                },
+                {
+                    "name": "ports",
+                    "label": "Hoặc nhập các cổng cụ thể",
+                    "component": "TextInput",
+                    "placeholder": "vd: 80,443,8080"
+                },
+                {
+                    "name": "scan_type",
+                    "label": "Loại scan",
+                    "component": "Select",
+                    "defaultValue": "-sS",
+                    "data": [
+                        {"value": "-sS", "label": "TCP SYN (-sS)"},
+                        {"value": "-sT", "label": "TCP Connect (-sT)"}
+                    ]
+                }
+            ]
+        },
+        "nuclei-scan": {
+            "id": "nuclei-scan",
+            "name": "Quét Lỗ hổng (Nuclei)",
+            "description": "Sử dụng Nuclei để tìm kiếm các lỗ hổng đã biết.",
+            "fields": [
+                {
+                    "name": "severity",
+                    "label": "Mức độ nghiêm trọng",
+                    "component": "MultiSelect",
+                    "defaultValue": ["high", "critical"],
+                    "data": ["info", "low", "medium", "high", "critical"]
+                },
+                {
+                    "name": "templates",
+                    "label": "Chạy các mẫu cụ thể (tùy chọn)",
+                    "component": "MultiSelect",
+                    "placeholder": "Để trống để chạy các mẫu được đề xuất",
+                    "data": ["cves", "default-logins", "exposed-panels", "vulnerabilities"]
+                }
+            ]
+        },
+        "wpscan-scan": {
+            "id": "wpscan-scan",
+            "name": "Quét WordPress (WPScan)",
+            "description": "Tìm kiếm các lỗ hổng phổ biến trên các trang web WordPress.",
+            "fields": [
+                {
+                    "name": "enumerate",
+                    "label": "Phát hiện các thành phần",
+                    "component": "MultiSelect",
+                    "defaultValue": ["p", "t"],
+                    "data": [
+                        {"value": "p", "label": "Plugins (p)"},
+                        {"value": "t", "label": "Themes (t)"},
+                        {"value": "u", "label": "Users (u)"}
+                    ]
+                }
+            ]
+        },
+        "dns-lookup": {
+            "id": "dns-lookup",
+            "name": "Phân giải DNS",
+            "description": "Thực hiện các truy vấn DNS cơ bản.",
+            "fields": []
+        },
+        "httpx-scan": {
+            "id": "httpx-scan",
+            "name": "Kiểm tra HTTPX",
+            "description": "Kiểm tra thông tin HTTP, tiêu đề, trạng thái, SSL, v.v.",
+            "fields": [
+                {
+                    "name": "follow_redirects",
+                    "label": "Theo dõi chuyển hướng (redirect)",
+                    "component": "Switch",
+                    "defaultValue": True
+                },
+                {
+                    "name": "status_codes",
+                    "label": "Chỉ lấy các mã trạng thái (tuỳ chọn)",
+                    "component": "TextInput",
+                    "placeholder": "vd: 200,301,302"
+                }
+            ]
+        },
+        "dirsearch-scan": {
+            "id": "dirsearch-scan",
+            "name": "Quét thư mục (Dirsearch)",
+            "description": "Tìm kiếm các thư mục và file ẩn trên web server.",
+            "fields": [
+                {
+                    "name": "extensions",
+                    "label": "Phần mở rộng cần quét",
+                    "component": "TextInput",
+                    "placeholder": "vd: php,asp,aspx"
+                },
+                {
+                    "name": "threads",
+                    "label": "Số luồng (threads)",
+                    "component": "NumberInput",
+                    "defaultValue": 10
+                }
+            ]
+        }
+    }
+
+    # Only return tools that are actually loaded in TOOLS
+    frontend_tools = []
+    for t in TOOLS:
+        tid = t.get("name")
+        if tid in tool_form_map:
+            frontend_tools.append(tool_form_map[tid])
+        else:
+            # Fallback: minimal info
+            frontend_tools.append({
+                "id": tid,
+                "name": t.get("name", tid),
+                "description": t.get("description", ""),
+                "fields": []
+            })
+
+    return {"tools": frontend_tools}
 
 @app.post("/api/scan_results", status_code=status.HTTP_204_NO_CONTENT)
 def create_scan_result(
@@ -685,7 +817,7 @@ def create_workflow_scan(
             for step_idx, step in enumerate(req.steps):
                 try:
                     step_counter += 1
-                    job_id = f"scan-{step.tool_id}-{target.replace('.', '-').replace('/', '-')}-{uuid4().hex[:4]}"
+                    job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
                     
                     sub_job = models.ScanJob(
                         job_id=job_id,

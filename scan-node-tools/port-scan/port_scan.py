@@ -166,11 +166,13 @@ if __name__ == "__main__":
         if controller_url and all_results:
             try:
                 for result in all_results:
+                    has_findings = bool(result["open_ports"])
                     payload = {
                         "target": result["target"],
                         "resolved_ips": [],
                         "open_ports": result["open_ports"],
                         "workflow_id": workflow_id,
+                        "has_findings": has_findings,
                         "scan_metadata": {
                             "tool": "port-scan",
                             "job_id": job_id,

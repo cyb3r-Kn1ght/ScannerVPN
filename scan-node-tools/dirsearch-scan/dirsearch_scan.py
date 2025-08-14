@@ -71,7 +71,49 @@ if __name__ == "__main__":
                 vpn_connected = True
             else:
                 print("[!] VPN connection failed, continuing without VPN...")
-        # Parse arguments
+
+        # --- Robust argument handling: convert positional/ENV targets to --url/--url-file ---
+        targets_env = os.getenv("TARGETS", "").split(",") if os.getenv("TARGETS") else []
+        targets_env = [t.strip() for t in targets_env if t.strip()]
+
+        import shlex
+        extra_targets = []
+        new_argv = [sys.argv[0]]
+        i = 1
+        while i < len(sys.argv):
+            arg = sys.argv[i]
+            if arg.startswith('-'):
+                new_argv.append(arg)
+                i += 1
+                # copy value nếu là flag có value
+                if arg in ["--url", "--url-file", "--threads", "--wordlist", "--include-status", "--extensions"]:
+                    if i < len(sys.argv):
+                        new_argv.append(sys.argv[i])
+                        i += 1
+            else:
+                extra_targets.append(arg)
+                i += 1
+
+        # Nếu có extra_targets, ưu tiên --url-file nếu nhiều target, --url nếu 1 target
+        if extra_targets:
+            if len(extra_targets) == 1:
+                new_argv.extend(["--url", extra_targets[0]])
+            else:
+                with open('/tmp/targets.txt', 'w') as f:
+                    for t in extra_targets:
+                        f.write(f"{t}\n")
+                new_argv.extend(["--url-file", '/tmp/targets.txt'])
+
+        # Nếu có targets_env, ghi ra file tạm (ưu tiên targets_env hơn positional)
+        if targets_env:
+            with open('/tmp/targets.txt', 'w') as f:
+                for target in targets_env:
+                    f.write(f"{target}\n")
+            if '--url-file' not in new_argv:
+                new_argv.extend(['--url-file', '/tmp/targets.txt'])
+
+        sys.argv = new_argv
+
         parser = argparse.ArgumentParser(description="Wrapper cho dirsearch -> JSON")
         parser.add_argument("--url", help="URL đơn lẻ")
         parser.add_argument("--url-file", help="File chứa nhiều URL, mỗi dòng một URL")
@@ -158,11 +200,13 @@ if __name__ == "__main__":
         target_url = args.url if args.url else None
         if controller_url and target_url:
             try:
+                has_findings = bool(findings)
                 payload = {
                     "target": target_url,
                     "resolved_ips": [],
                     "open_ports": [],
                     "workflow_id": workflow_id,
+                    "has_findings": has_findings,
                     "scan_metadata": {
                         "tool": "dirsearch-scan",
                         "job_id": job_id,

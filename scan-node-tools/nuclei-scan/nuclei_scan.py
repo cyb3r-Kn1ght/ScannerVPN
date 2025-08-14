@@ -142,6 +142,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[!] VPN setup error: {e}, continuing without VPN...")
 
+
     try:
         # Parse arguments và targets
         parser = argparse.ArgumentParser(description="Wrapper Nuclei -> JSONL (compact option)")
@@ -163,18 +164,51 @@ if __name__ == "__main__":
         parser.add_argument("--compact", action="store_true", help="In JSONL tối giản cho pentest")
         parser.add_argument("--min-severity", default="info", help="Ngưỡng tối thiểu khi --compact (vd: medium)")
         parser.add_argument("--strip-http", action="store_true", help="Bỏ request/response/curl-command trong output đầy đủ")
-        
+
         # Lấy targets từ environment hoặc arguments
         targets_env = os.getenv("TARGETS", "").split(",") if os.getenv("TARGETS") else []
         targets_env = [t.strip() for t in targets_env if t.strip()]
-        
+
+        # Xử lý positional arguments (nếu có) thành --target hoặc --list-file
+        # Nếu sys.argv có phần tử không phải flag (không bắt đầu bằng '-') thì chuyển thành --target hoặc --list-file
+        import shlex
+        extra_targets = []
+        new_argv = [sys.argv[0]]
+        i = 1
+        while i < len(sys.argv):
+            arg = sys.argv[i]
+            if arg.startswith('-'):
+                new_argv.append(arg)
+                i += 1
+                # copy value nếu là flag có value
+                if arg in ["--target", "--list-file", "--tags", "--severity", "--templates", "--workflows", "--exclude-templates", "--exclude-tags", "--exclude-severity", "--rate-limit", "--concurrency", "--min-severity"]:
+                    if i < len(sys.argv):
+                        new_argv.append(sys.argv[i])
+                        i += 1
+            else:
+                extra_targets.append(arg)
+                i += 1
+
+        # Nếu có extra_targets, ưu tiên --list-file nếu nhiều target, --target nếu 1 target
+        if extra_targets:
+            if len(extra_targets) == 1:
+                new_argv.extend(["--target", extra_targets[0]])
+            else:
+                # Ghi ra file tạm
+                with open('/tmp/targets.txt', 'w') as f:
+                    for t in extra_targets:
+                        f.write(f"{t}\n")
+                new_argv.extend(["--list-file", '/tmp/targets.txt'])
+
+        # Nếu có targets_env, ghi ra file tạm (ưu tiên targets_env hơn positional)
         if targets_env:
-            # Tạo temporary file với targets để Nuclei đọc
             with open('/tmp/targets.txt', 'w') as f:
                 for target in targets_env:
                     f.write(f"{target}\n")
-            sys.argv.extend(['--list-file', '/tmp/targets.txt'])
-        
+            if '--list-file' not in new_argv:
+                new_argv.extend(['--list-file', '/tmp/targets.txt'])
+
+        sys.argv = new_argv
         args = parser.parse_args()
 
         if not args.target and not args.list_file:
@@ -270,12 +304,13 @@ if __name__ == "__main__":
                     for result in scan_results:
                         if target in str(result.get("host", "")) or target in str(result.get("url", "")):
                             target_results.append(result)
-                    
+                    has_findings = bool(target_results)
                     payload = {
                         "target": target,
                         "resolved_ips": [],
                         "open_ports": [],
                         "workflow_id": workflow_id,
+                        "has_findings": has_findings,
                         "scan_metadata": {
                             "tool": "nuclei-scan",
                             "job_id": job_id,

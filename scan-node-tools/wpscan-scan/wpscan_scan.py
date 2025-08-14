@@ -165,6 +165,7 @@ if __name__ == "__main__":
         if controller_url and all_results:
             try:
                 for result in all_results:
+                    has_findings = bool(result["vulnerabilities"])
                     payload = {
                         "target": result["target"],
                         "workflow_id": workflow_id,
@@ -173,6 +174,7 @@ if __name__ == "__main__":
                         "vulnerability_count": result["vulnerability_count"],
                         "wordpress_version": result["wordpress_version"],
                         "theme": result["theme"],
+                        "has_findings": has_findings,
                         "scan_metadata": {
                             "tool": "wpscan-scan",
                             "job_id": job_id,

@@ -8,7 +8,10 @@ class ScanResultCreate(BaseModel):
     open_ports: Union[List[int], List[Dict[str, Any]]] = []
     scan_metadata: Dict[str, Any] = {}
     workflow_id: Optional[str] = None
-
+    httpx_results: Optional[List[Dict[str, Any]]] = None
+    http_endpoints: Optional[List[Dict[str, Any]]] = None
+    http_metadata: Optional[Dict[str, Any]] = None
+    
 class ScanResult(ScanResultCreate):
     id: int
     timestamp: datetime

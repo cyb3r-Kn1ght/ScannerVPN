@@ -294,12 +294,18 @@ def create_scan_result(
     Nhận POST từ Scanner Node, lưu kết quả vào DB.
     Cập nhật job status thành 'completed' khi nhận được kết quả.
     """
+    # Merge các trường httpx_results, http_endpoints, http_metadata vào scan_metadata nếu có
+    scan_metadata = dict(payload.scan_metadata) if payload.scan_metadata else {}
+    for k in ["httpx_results", "http_endpoints", "http_metadata"]:
+        v = getattr(payload, k, None)
+        if v is not None:
+            scan_metadata[k] = v
     # Lưu scan result
     db_obj = models.ScanResult(
         target=payload.target,
         resolved_ips=payload.resolved_ips,
         open_ports=payload.open_ports,
-        scan_metadata=payload.scan_metadata,
+        scan_metadata=scan_metadata,
         workflow_id=payload.workflow_id
     )
     db.add(db_obj)

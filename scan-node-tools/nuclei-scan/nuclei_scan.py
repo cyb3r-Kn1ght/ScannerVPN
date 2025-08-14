@@ -305,7 +305,7 @@ if __name__ == "__main__":
                         if target in str(result.get("host", "")) or target in str(result.get("url", "")):
                             # Luôn loại bỏ trường response/request/curl-command nếu có
                             filtered = dict(result)
-                            for k in ("response"):
+                            for k in ("response", "request", "curl-command"):
                                 if k in filtered:
                                     del filtered[k]
                             target_results.append(filtered)

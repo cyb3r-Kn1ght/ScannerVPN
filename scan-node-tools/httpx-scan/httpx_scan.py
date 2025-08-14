@@ -156,7 +156,7 @@ if __name__ == "__main__":
                     "metadata": result.get("metadata", {}),
                     "all_endpoints": result.get("all_endpoints", [])
                 })
-        
+
         # Gửi kết quả về Controller nếu có callback URL
         if controller_url and all_results:
             try:
@@ -169,6 +169,7 @@ if __name__ == "__main__":
                         "workflow_id": workflow_id,
                         "http_metadata": result["metadata"],
                         "http_endpoints": result["all_endpoints"],
+                        "httpx_results": result["all_endpoints"],
                         "has_findings": has_findings,
                         "scan_metadata": {
                             "tool": "httpx-scan",

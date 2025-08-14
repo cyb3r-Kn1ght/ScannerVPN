@@ -1028,14 +1028,19 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
     def dns_flatten(r):
         return {"target": r.target, "resolved_ips": r.resolved_ips}
 
+    import json
     def httpx_flatten(r):
         meta = r.scan_metadata or {}
-        # Ưu tiên httpx_results, nếu không có thì lấy http_endpoints hoặc http_metadata (dạng list)
+        # Nếu meta là str (TEXT), parse lại thành dict
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                return []
         if "httpx_results" in meta:
             return meta["httpx_results"]
         if "http_endpoints" in meta:
             return meta["http_endpoints"]
-        # Nếu http_metadata là 1 dict (1 endpoint), trả về list 1 phần tử
         if "http_metadata" in meta and isinstance(meta["http_metadata"], dict):
             return [meta["http_metadata"]]
         return []

@@ -1,0 +1,103 @@
+  {
+      "target": "demo.testfire.net",
+      "resolved_ips": [],
+      "open_ports": [],
+      "scan_metadata": {
+        "tool": "httpx-scan",
+        "job_id": "scan-httpx-scan-dbd53f",
+        "vpn_used": false,
+        "scan_ip": "Unknown",
+        "vpn_local_ip": null,
+        "tun_interface": false,
+        "scan_options": {
+          "follow_redirects": true,
+          "status_codes": "200,301,302"
+        }
+      },
+      "workflow_id": "workflow-4ba9a7b5",
+      "id": 106,
+      "timestamp": "2025-08-14T04:21:37.746387"
+    },
+    {
+      "target": "demo.testfire.net",
+      "resolved_ips": [],
+      "open_ports": [
+        {
+          "port": 80,
+          "protocol": "tcp",
+          "service": "http",
+          "version": ""
+        },
+        {
+          "port": 443,
+          "protocol": "tcp",
+          "service": "https",
+          "version": ""
+        },
+        {
+          "port": 8080,
+          "protocol": "tcp",
+          "service": "http-proxy",
+          "version": ""
+        }
+      ],
+      "scan_metadata": {
+        "tool": "port-scan",
+        "job_id": "scan-port-scan-a764e5",
+        "vpn_used": true,
+        "scan_ip": "103.57.130.113",
+        "vpn_local_ip": "10.8.0.6",
+        "tun_interface": true,
+        "scan_options": {
+          "all_ports": false,
+          "ports": "80,443,8080",
+          "scan_type": "-sS"
+        }
+      },
+      "workflow_id": "workflow-4ba9a7b5",
+      "id": 105,
+      "timestamp": "2025-08-14T04:19:31.517564"
+    },
+    {
+      "target": "demo.testfire.net",
+      "resolved_ips": [
+        "65.61.137.117"
+      ],
+      "open_ports": [],
+      "scan_metadata": {
+        "tool": "dns-lookup",
+        "job_id": "scan-dns-lookup-80b985",
+        "vpn_used": true,
+        "scan_ip": "103.57.130.113",
+        "vpn_local_ip": "10.8.0.8",
+        "tun_interface": true
+      },
+      "workflow_id": "workflow-4ba9a7b5",
+      "id": 104,
+      "timestamp": "2025-08-14T04:19:31.181512"
+    },
+    {
+      "target": "demo.testfire.net",
+      "resolved_ips": [],
+      "open_ports": [],
+      "scan_metadata": {
+        "tool": "wpscan-scan",
+        "job_id": "scan-wpscan-scan-eddbce",
+        "vpn_used": true,
+        "scan_ip": "103.57.130.113",
+        "vpn_local_ip": "10.8.0.5",
+        "tun_interface": true,
+        "scan_options": {
+          "enumerate": [
+            "p",
+            "t"
+          ],
+          "api_token": "OyiwPdiO9VJhjMOqL6PoWAPC3EpA88mvoowwOASINhO"
+        }
+      },
+      "workflow_id": "workflow-4ba9a7b5",
+      "id": 103,
+      "timestamp": "2025-08-14T04:19:29.724767"
+    }
+  ]
+}

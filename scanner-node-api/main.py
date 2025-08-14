@@ -113,7 +113,7 @@ def _create_job(req: ScanRequest):
         security_context=client.V1SecurityContext(
             privileged=True,
             capabilities=client.V1Capabilities(
-                add=["NET_ADMIN"]
+                add=["NET_ADMIN", "NET_RAW"]
             )
         ),
         volume_mounts=[

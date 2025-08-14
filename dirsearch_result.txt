@@ -1,0 +1,152 @@
+  {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/scripts/fckeditor",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/secure/logon.jsp",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/sxd/",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/signin",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/release",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/sqladmin/",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/upload.php",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/tinymce",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/tiny_mce",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/sysadmin/",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/uploads.php",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/user_count.txt",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/views/ajax/autocomplete/user/a",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin/web/",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/admin;/",
+            "size": "0B",
+            "redirect_to": "/login.jsp"
+          },
+          {
+            "status": 401,
+            "url": "https://demo.testfire.net/api/application.wadl",
+            "size": "35B"
+          },
+          {
+            "status": 200,
+            "url": "https://demo.testfire.net/feedback.jsp",
+            "size": "8KB"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/images",
+            "size": "0B",
+            "redirect_to": "/images/"
+          },
+          {
+            "status": 200,
+            "url": "https://demo.testfire.net/index.jsp",
+            "size": "9KB"
+          },
+          {
+            "status": 200,
+            "url": "https://demo.testfire.net/login.jsp",
+            "size": "8KB"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/logout.jsp",
+            "size": "0B",
+            "redirect_to": "index.jsp"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/pr",
+            "size": "0B",
+            "redirect_to": "/pr/"
+          },
+          {
+            "status": 200,
+            "url": "https://demo.testfire.net/search.jsp",
+            "size": "7KB"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/static",
+            "size": "0B",
+            "redirect_to": "/static/"
+          },
+          {
+            "status": 302,
+            "url": "https://demo.testfire.net/swagger",
+            "size": "0B",
+            "redirect_to": "/swagger/"
+          },
+          {
+            "status": 200,
+            "url": "https://demo.testfire.net/swagger/index.html",
+            "size": "1KB"
+          }
+        ],
+        "total_findings": 200

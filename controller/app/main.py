@@ -1,129 +1,23 @@
+import os
+import json
+import math
+import random
+import asyncio
+import yaml
+import httpx
+import logging
 from fastapi import FastAPI, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
-import httpx
-import logging
-import yaml
-import os
 from uuid import uuid4
 from pydantic import BaseModel
-
 from app import models, schemas, database
 from app.vpn_service import VPNService
 
-# Thiết lập logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Khởi tạo FastAPI app
+app = FastAPI()
 
-# Tạo bảng nếu chưa có và migrate schema nếu cần
-
-# --- MIGRATE metadata column in scan_results to JSON if needed (for httpx-scan compatibility) ---
-try:
-    models.Base.metadata.create_all(bind=database.engine)
-    logger.info("Ensured all tables exist")
-    from sqlalchemy import text
-    with database.engine.connect() as conn:
-        # Check and migrate scan_jobs columns (giữ nguyên như cũ)
-        result = conn.execute(text("PRAGMA table_info(scan_jobs)"))
-        columns = [row[1] for row in result.fetchall()]
-        vpn_fields = [
-            ("vpn_profile", "TEXT"),
-            ("vpn_country", "TEXT"), 
-            ("vpn_hostname", "TEXT"),
-            ("vpn_assignment", "TEXT"),
-            ("workflow_id", "TEXT"),
-            ("step_order", "INTEGER")
-        ]
-        for field_name, field_type in vpn_fields:
-            if field_name not in columns:
-                logger.info(f"Adding missing column to scan_jobs: {field_name}")
-                conn.execute(text(f"ALTER TABLE scan_jobs ADD COLUMN {field_name} {field_type}"))
-                conn.commit()
-            else:
-                logger.debug(f"Column {field_name} already exists in scan_jobs")
-
-        # Check and add workflow_id to scan_results table
-        result = conn.execute(text("PRAGMA table_info(scan_results)"))
-        result_columns = [row[1] for row in result.fetchall()]
-        col_types = {row[1]: row[2] for row in result.fetchall()}
-
-        if "workflow_id" not in result_columns:
-            logger.info("Adding workflow_id column to scan_results table")
-            conn.execute(text("ALTER TABLE scan_results ADD COLUMN workflow_id TEXT"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_scan_results_workflow_id ON scan_results(workflow_id)"))
-            conn.commit()
-        else:
-            logger.debug("workflow_id column already exists in scan_results")
-
-        # --- MIGRATE metadata column to JSON if needed ---
-        # SQLite: type is 'TEXT' or 'JSON' (should be JSON)
-        result = conn.execute(text("PRAGMA table_info(scan_results)"))
-        meta_type = None
-        for row in result.fetchall():
-            if row[1] == "metadata":
-                meta_type = row[2]
-        if meta_type and meta_type.upper() != "JSON":
-            logger.warning(f"Migrating scan_results.metadata column from {meta_type} to JSON for httpx-scan compatibility!")
-            # SQLite không hỗ trợ ALTER COLUMN, phải tạo bảng mới và copy dữ liệu
-            conn.execute(text("ALTER TABLE scan_results RENAME TO scan_results_old"))
-            conn.execute(text("""
-                CREATE TABLE scan_results (
-                    id INTEGER PRIMARY KEY,
-                    timestamp DATETIME,
-                    target TEXT,
-                    resolved_ips JSON,
-                    open_ports JSON,
-                    metadata JSON,
-                    workflow_id TEXT
-                )
-            """))
-            conn.execute(text("""
-                INSERT INTO scan_results (id, timestamp, target, resolved_ips, open_ports, metadata, workflow_id)
-                SELECT id, timestamp, target, resolved_ips, open_ports, metadata, workflow_id FROM scan_results_old
-            """))
-            conn.execute(text("DROP TABLE scan_results_old"))
-            conn.commit()
-            logger.info("scan_results.metadata column migrated to JSON!")
-        else:
-            logger.info("scan_results.metadata column is already JSON")
-
-        # Check if workflow_jobs table exists
-        result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='workflow_jobs'"))
-        workflow_table_exists = result.fetchone() is not None
-        if not workflow_table_exists:
-            logger.info("Creating workflow_jobs table...")
-            # Table will be created by create_all() below
-        else:
-            logger.debug("workflow_jobs table already exists")
-        logger.info("Database schema migration completed")
-except Exception as e:
-    logger.error(f"Database setup/migration error: {e}")
-    models.Base.metadata.create_all(bind=database.engine)
-    logger.info("Fallback: Created tables with current schema")
-
-# Khởi tạo VPN Service
-vpn_service = VPNService()
-
-app = FastAPI(
-    title="Scanner Controller",
-    version="1.0"
-)
-
-@app.get("/")
-def root():
-    """
-    Root endpoint để test.
-    """
-    return {"message": "Scanner Controller API", "status": "running"}
-
-@app.get("/health")
-def health():
-    """
-    Health check endpoint.
-    """
-    logger.info("Health check endpoint called")
-    return {"status": "ok", "tools_loaded": len(TOOLS)}
-
+# Định nghĩa get_db để lấy session DB
 def get_db():
     db = database.SessionLocal()
     try:
@@ -131,15 +25,162 @@ def get_db():
     finally:
         db.close()
 
-# Load metadata của các tool từ tools.yaml ở thư mục làm việc
-TOOLS_FILE = os.path.join(os.getcwd(), "tools.yaml")
-logger.info(f"Looking for tools.yaml at: {TOOLS_FILE}")
+# Đường dẫn file tools.yaml
+TOOLS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools.yaml")
 
-if not os.path.exists(TOOLS_FILE):
-    logger.error(f"tools.yaml not found at {TOOLS_FILE}")
-    # List current directory contents
-    logger.info(f"Current directory contents: {os.listdir(os.getcwd())}")
-    raise RuntimeError(f"tools.yaml not found at {TOOLS_FILE}")
+# Khởi tạo VPNService
+vpn_service = VPNService()
+
+# Thiết lập logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Endpoint: GET /api/sub_jobs/{sub_job_id}/results
+@app.get("/api/sub_jobs/{sub_job_id}/results")
+def get_sub_job_results(sub_job_id: str, db: Session = Depends(get_db)):
+    """
+    Trả về kết quả scan của sub-job theo định dạng phù hợp từng tool.
+    """
+    # Tìm job
+    job = db.query(models.ScanJob).filter(models.ScanJob.job_id == sub_job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Sub-job not found")
+
+    # Lấy kết quả scan (có thể có nhiều bản ghi, thường chỉ 1)
+    results = db.query(models.ScanResult).filter(
+        models.ScanResult.scan_metadata.op('->>')('job_id') == sub_job_id
+    ).all()
+    if not results:
+        return []
+
+    tool = job.tool
+    out = []
+    for r in results:
+        meta = r.scan_metadata or {}
+        if isinstance(meta, str):
+            import json
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        # DNS
+        if tool == "dns-lookup":
+            out.append({
+                "target": r.target,
+                "resolved_ips": r.resolved_ips or []
+            })
+        # Port scan
+        elif tool == "port-scan":
+            for p in r.open_ports or []:
+                out.append({
+                    "ip": r.target,
+                    "port": p.get("port"),
+                    "protocol": p.get("protocol"),
+                    "service": p.get("service")
+                })
+        # httpx-scan
+        elif tool == "httpx-scan":
+            for ep in meta.get("httpx_results", []):
+                out.append(ep)
+        # nuclei-scan
+        elif tool == "nuclei-scan":
+            for finding in meta.get("nuclei_results", []):
+                # Lấy các trường chính xác nhất
+                info = finding.get("info", {})
+                out.append({
+                    "name": info.get("name") or finding.get("name"),
+                    "severity": info.get("severity") or finding.get("severity"),
+                    "template_id": finding.get("template-id"),
+                    "tags": info.get("tags") or finding.get("tags"),
+                    "matched_at": finding.get("matched-at"),
+                    "type": finding.get("type"),
+                    "host": finding.get("host"),
+                    "ip": finding.get("ip"),
+                    "port": finding.get("port"),
+                    "timestamp": finding.get("timestamp")
+                })
+        # wpscan-scan
+        elif tool == "wpscan-scan":
+            for finding in meta.get("wpscan_results", []):
+                out.append({
+                    "name": finding.get("name"),
+                    "confidence": finding.get("confidence"),
+                    "fixed_in": finding.get("fixed_in"),
+                    "references": finding.get("references")
+                })
+        # dirsearch-scan
+        elif tool == "dirsearch-scan":
+            for f in meta.get("dirsearch_results", []):
+                out.append(f)
+        else:
+            out.append(meta)
+    return out
+# Endpoint: GET /api/workflows/{workflow_id}/summary
+@app.get("/api/workflows/{workflow_id}/summary")
+def get_workflow_summary(workflow_id: str, db: Session = Depends(get_db)):
+    """
+    Tổng hợp kết quả các tool thành summary_by_target cho từng target.
+    """
+    workflow = db.query(models.WorkflowJob).filter(
+        models.WorkflowJob.workflow_id == workflow_id
+    ).first()
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Lấy tất cả sub-jobs và kết quả
+    sub_jobs = db.query(models.ScanJob).filter(
+        models.ScanJob.workflow_id == workflow_id
+    ).all()
+    job_ids = [job.job_id for job in sub_jobs]
+    scan_results = db.query(models.ScanResult).filter(
+        models.ScanResult.scan_metadata.op('->>')('job_id').in_(job_ids)
+    ).all()
+
+    # Gom kết quả theo target
+    summary_by_target = {}
+    for r in scan_results:
+        tgt = r.target
+        if tgt not in summary_by_target:
+            summary_by_target[tgt] = {
+                "target": tgt,
+                "dns_records": [],
+                "open_ports": [],
+                "web_technologies": set(),
+                "vulnerabilities": []
+            }
+        # DNS
+        if r.resolved_ips:
+            summary_by_target[tgt]["dns_records"].extend(r.resolved_ips)
+        # Port scan
+        if r.open_ports:
+            for p in r.open_ports:
+                summary_by_target[tgt]["open_ports"].append({
+                    "port": p.get("port"),
+                    "protocol": p.get("protocol"),
+                    "service": p.get("service")
+                })
+        # httpx-scan: lấy webserver
+        meta = r.scan_metadata or {}
+        if isinstance(meta, str):
+            import json
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        # httpx-scan
+        if "httpx_results" in meta:
+            for ep in meta["httpx_results"]:
+                ws = ep.get("webserver")
+                if ws:
+                    summary_by_target[tgt]["web_technologies"].add(ws)
+        # nuclei-scan: vulnerabilities + tech
+        if "nuclei_results" in meta:
+            for finding in meta["nuclei_results"]:
+                name = finding.get("name")
+                sev = finding.get("severity")
+                if name and sev:
+                    summary_by_target[tgt]["vulnerabilities"].append({"name": name, "severity": sev})
+
 
 with open(TOOLS_FILE, 'r') as f:
     TOOLS = yaml.safe_load(f).get("tools", [])

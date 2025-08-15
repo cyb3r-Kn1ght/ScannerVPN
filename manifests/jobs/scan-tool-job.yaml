@@ -10,3 +10,10 @@ spec:
         - name: {{TOOL_NAME}}
           image: {{IMAGE}}
           args: {{ARGS}}        
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "2"

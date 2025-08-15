@@ -184,8 +184,9 @@ def get_workflow_summary(workflow_id: str, db: Session = Depends(get_db)):
         # nuclei-scan: vulnerabilities + tech
         if "nuclei_results" in meta:
             for finding in meta["nuclei_results"]:
-                name = finding.get("name")
-                sev = finding.get("severity")
+                info = finding.get("info", {})
+                name = finding.get("name") or info.get("name")
+                sev = finding.get("severity") or info.get("severity")
                 if name and sev:
                     summary_by_target[tgt]["vulnerabilities"].append({"name": name, "severity": sev})
 

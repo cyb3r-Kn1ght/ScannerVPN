@@ -22,7 +22,10 @@ def scan_wpscan(url, api_token=None, options=None):
         # Thêm các options khác
         if options:
             if options.get("enumerate"):
-                cmd += ["--enumerate", options["enumerate"]]
+                enum_val = options["enumerate"]
+                if isinstance(enum_val, list):
+                    enum_val = ",".join(enum_val)
+                cmd += ["--enumerate", enum_val]
             if options.get("plugins-detection"):
                 cmd += ["--plugins-detection", options["plugins-detection"]]
             if options.get("themes-detection"):

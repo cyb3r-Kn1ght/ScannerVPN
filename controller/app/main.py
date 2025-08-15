@@ -1176,6 +1176,59 @@ def cancel_workflow(workflow_id: str, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "cancelled", "cancelled_jobs": len(sub_jobs)}
 
+# Endpoint: GET /api/workflows/{workflow_id}/status
+@app.get("/api/workflows/{workflow_id}/status")
+def get_workflow_status(workflow_id: str, db: Session = Depends(get_db)):
+    """
+    Lấy trạng thái hiện tại của workflow, bao gồm workflow, sub_jobs, progress (theo mockStatusData).
+    """
+    workflow = db.query(models.WorkflowJob).filter(
+        models.WorkflowJob.workflow_id == workflow_id
+    ).first()
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Get sub-jobs
+    sub_jobs = db.query(models.ScanJob).filter(
+        models.ScanJob.workflow_id == workflow_id
+    ).order_by(models.ScanJob.step_order).all()
+
+    sub_job_list = []
+    for job in sub_jobs:
+        job_dict = {
+            "job_id": job.job_id,
+            "tool": job.tool,
+            "status": job.status,
+            "step_order": job.step_order
+        }
+        if job.error_message:
+            job_dict["error_message"] = job.error_message
+        sub_job_list.append(job_dict)
+
+    # Progress calculation
+    completed = sum(1 for job in sub_jobs if job.status == "completed")
+    failed = sum(1 for job in sub_jobs if job.status == "failed")
+    total = workflow.total_steps or len(sub_jobs)
+    percentage = ((completed + failed) / total * 100) if total > 0 else 0
+
+    # Compose workflow info
+    workflow_info = {
+        "workflow_id": workflow.workflow_id,
+        "status": workflow.status,
+        "updated_at": getattr(workflow, "updated_at", None) or getattr(workflow, "timestamp", None)
+    }
+
+    return {
+        "workflow": workflow_info,
+        "sub_jobs": sub_job_list,
+        "progress": {
+            "completed": completed,
+            "total": total,
+            "failed": failed,
+            "percentage": percentage
+        }
+    }
+
 @app.get("/debug/vpn-service")
 async def debug_vpn_service():
     """Debug VPN service status"""

@@ -28,8 +28,14 @@ def get_db():
 # Đường dẫn file tools.yaml
 TOOLS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools.yaml")
 
+
 # Khởi tạo VPNService
 vpn_service = VPNService()
+
+# Load TOOLS from tools.yaml
+with open(TOOLS_FILE, 'r') as f:
+    TOOLS = yaml.safe_load(f).get("tools", [])
+    logging.getLogger(__name__).info(f"Loaded {len(TOOLS)} tools: {[t.get('name') for t in TOOLS]}")
 
 # Thiết lập logging
 logging.basicConfig(level=logging.INFO)
@@ -116,10 +122,12 @@ def get_sub_job_results(sub_job_id: str, db: Session = Depends(get_db)):
             out.append(meta)
     return out
 # Endpoint: GET /api/workflows/{workflow_id}/summary
+
 @app.get("/api/workflows/{workflow_id}/summary")
 def get_workflow_summary(workflow_id: str, db: Session = Depends(get_db)):
     """
     Tổng hợp kết quả các tool thành summary_by_target cho từng target.
+    Luôn trả về JSON object, không trả về None/null.
     """
     workflow = db.query(models.WorkflowJob).filter(
         models.WorkflowJob.workflow_id == workflow_id
@@ -181,10 +189,12 @@ def get_workflow_summary(workflow_id: str, db: Session = Depends(get_db)):
                 if name and sev:
                     summary_by_target[tgt]["vulnerabilities"].append({"name": name, "severity": sev})
 
+    # Convert set to list for web_technologies
+    for tgt in summary_by_target:
+        summary_by_target[tgt]["web_technologies"] = list(summary_by_target[tgt]["web_technologies"])
 
-with open(TOOLS_FILE, 'r') as f:
-    TOOLS = yaml.safe_load(f).get("tools", [])
-    logger.info(f"Loaded {len(TOOLS)} tools: {[t.get('name') for t in TOOLS]}")
+    # Always return a JSON object
+    return {"summary": list(summary_by_target.values())}
 
 @app.get("/api/tools")
 def list_tools():

@@ -1093,14 +1093,19 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
         }
         sub_job_details.append(job_detail)
 
+    # Tính lại progress thực tế dựa trên trạng thái sub_jobs
+    completed = sum(1 for job in sub_jobs if job.status == "completed")
+    failed = sum(1 for job in sub_jobs if job.status == "failed")
+    total = workflow.total_steps
+    percentage = (completed / total * 100) if total > 0 else 0
     return {
         "workflow": workflow,
         "sub_jobs": sub_job_details,
         "progress": {
-            "completed": workflow.completed_steps,
-            "total": workflow.total_steps,
-            "failed": workflow.failed_steps,
-            "percentage": (workflow.completed_steps / workflow.total_steps * 100) if workflow.total_steps > 0 else 0
+            "completed": completed,
+            "total": total,
+            "failed": failed,
+            "percentage": percentage
         }
     }
 

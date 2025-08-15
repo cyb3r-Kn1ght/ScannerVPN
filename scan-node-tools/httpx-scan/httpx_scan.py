@@ -31,6 +31,18 @@ def scan(target, options=None):
             cmd.extend(['-retries', str(options["retries"])])
         if options.get("ports"):
             cmd.extend(['-ports', options["ports"]])
+        if options.get("status_code"):
+            cmd.append('-status-code')
+        if options.get("title"):
+            cmd.append('-title')
+        if options.get("ip"):
+            cmd.append('-ip')
+        if options.get("web_server"):
+            cmd.append('-web-server')
+        if options.get("content_length"):
+            cmd.append('-content-length')
+        if options.get("tech_detect"):
+            cmd.append('-tech-detect')
     
     try:
         print(f"[*] Running httpx command: {' '.join(cmd[:4])}... {target}")

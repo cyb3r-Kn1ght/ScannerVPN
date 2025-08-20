@@ -797,7 +797,7 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
             results_by_job[job_id].append(r)
 
     def nuclei_flatten(find):
-        # Trường chung
+        # Common fields always present
         info = find.get('info', {}) or {}
         out = {
             "template": find.get("template"),
@@ -806,17 +806,21 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
             "name": info.get("name"),
             "severity": info.get("severity"),
             "tags": info.get("tags"),
+            "matched_at": find.get("matched-at"),
+            "type": find.get("type"),
             "host": find.get("host"),
             "ip": find.get("ip"),
             "port": find.get("port"),
-            "type": find.get("type"),
             "timestamp": find.get("timestamp"),
-            "matcher-status": find.get("matcher-status"),
         }
-        # Trường phụ
+        # Gather all other fields as extra_fields
         extra = {}
         for k, v in find.items():
-            if k not in out and k not in ("info",):
+            if k not in ("template", "template-id", "template-url", "type", "host", "ip", "port", "timestamp", "matched-at", "matcher-status", "info"):
+                extra[k] = v
+        # Also add all info fields except name, severity, tags
+        for k, v in info.items():
+            if k not in ("name", "severity", "tags"):
                 extra[k] = v
         if extra:
             out["extra_fields"] = extra

@@ -1,0 +1,5 @@
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.2.2
+paramiko==3.4.0
+requests[socks]==2.32.3

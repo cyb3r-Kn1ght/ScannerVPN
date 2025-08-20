@@ -1,0 +1,90 @@
+{
+  "job_id": "bf-from-ffuf-1755673247",
+  "strategy": "dictionary",
+  "targets": [
+    {
+      "protocol": "http_form",
+      "host": "10.102.197.46",
+      "port": 8080,
+      "http": {
+        "url": "http://10.102.197.46:8080/wp-login.php",
+        "method": "POST",
+        "content_type": "form",
+        "headers": {
+          "Origin": "http://10.102.197.46",
+          "Referer": "http://10.102.197.46:8080/login"
+        },
+        "body_template": "log=§USER§&pwd=§PASS§",
+        "success": {
+          "any": [
+            {
+              "status": 302,
+              "location_regex": "/(home|dashboard|profile|account)"
+            },
+            {
+              "set_cookie_regex": "(session|auth|token)="
+            }
+          ]
+        },
+        "failure": {
+          "body_regex": "(Invalid|incorrect|unauthori[sz]ed|sai|không đúng|thất bại)"
+        },
+        "mfa_hint_regex": "(OTP|2FA|Authenticator)",
+        "verify_ssl": true,
+        "pre_login": {
+          "mode": "once",
+          "url": "http://10.102.197.46:8080/login"
+        }
+      }
+    },
+    {
+      "protocol": "http_form",
+      "host": "10.102.197.46",
+      "port": 8080,
+      "http": {
+        "url": "http://10.102.197.46:8080/wp-login.php",
+        "method": "POST",
+        "content_type": "form",
+        "headers": {
+          "Origin": "http://10.102.197.46",
+          "Referer": "http://10.102.197.46:8080/wp-login.php"
+        },
+        "body_template": "log=§USER§&pwd=§PASS§",
+        "success": {
+          "any": [
+            {
+              "status": 302,
+              "location_regex": "/(home|dashboard|profile|account)"
+            },
+            {
+              "set_cookie_regex": "(session|auth|token)="
+            }
+          ]
+        },
+        "failure": {
+          "body_regex": "(Invalid|incorrect|unauthori[sz]ed|sai|không đúng|thất bại)"
+        },
+        "mfa_hint_regex": "(OTP|2FA|Authenticator)",
+        "verify_ssl": true,
+        "pre_login": {
+          "mode": "once",
+          "url": "http://10.102.197.46:8080/wp-login.php"
+        }
+      }
+    }
+  ],
+  "wordlists": {
+    "users": "/wordlists/users.txt",
+    "passwords": "/wordlists/passwords.txt"
+  },
+  "limits": {
+    "concurrency": 2,
+    "rate_per_min": 10,
+    "jitter_ms": [
+      100,
+      300
+    ],
+    "timeout_sec": 15,
+    "stop_on_success": true
+  }
+}

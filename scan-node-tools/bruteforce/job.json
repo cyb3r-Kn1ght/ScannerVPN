@@ -1,0 +1,26 @@
+{
+  "job_id": "bf-demo-1",
+  "strategy": "dictionary",
+  "targets": [
+    {
+      "protocol": "http_form",
+      "host": "http-login",
+      "port": 8080,
+      "http": {
+        "url": "http://http-login:8080/login",
+        "method": "POST",
+        "content_type": "form",
+        "headers": { "Origin": "http://http-login:8080", "Referer": "http://http-login:8080/login" },
+        "body_template": "username=§USER§&password=§PASS§&csrf=§CSRF§",
+        "pre_login": { "mode": "once", "url": "http://http-login:8080/login", "extract": { "csrf": "input[name=csrf]@value" } },
+        "success": { "any": [ { "status": 302, "location_regex": "/dashboard" }, { "set_cookie_regex": "session=" } ] },
+        "failure": { "body_regex": "Invalid" }
+      }
+    },
+    { "protocol": "ssh", "host": "sshd", "port": 22, "auth": "password" },
+    { "protocol": "ftp", "host": "ftp",  "port": 2121, "tls": "plain" }
+  ],
+  "wordlists": { "users": "/wordlists/users.txt", "passwords": "/wordlists/passwords.txt" },
+  "limits": { "concurrency": 2, "rate_per_min": 30, "jitter_ms": [50, 150], "timeout_sec": 10, "stop_on_success": true },
+  "network": { "via": "direct" }
+}

@@ -3,8 +3,8 @@ FROM python:3.11-slim
 
 # Cài các gói cần thiết cho VPN
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates openvpn iproute2 iputils-ping dnsutils \
-      && rm -rf /var/lib/apt/lists/*
+    git ca-certificates openvpn iproute2 iputils-ping dnsutils curl wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Lấy dirsearch
 RUN git clone --depth=1 https://github.com/maurosoria/dirsearch /opt/dirsearch

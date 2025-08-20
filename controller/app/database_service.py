@@ -186,11 +186,13 @@ def get_sub_job_results(sub_job_id: str, db: Session, page: int = 1, page_size: 
                 out.append(ep)
         elif tool == "nuclei-scan":
             for finding in meta.get("nuclei_results", []):
-                info = finding.get("info", {})
-                out.append({
+                info = finding.get("info", {}) or {}
+                out_item = {
+                    "template": finding.get("template"),
+                    "template-id": finding.get("template-id"),
+                    "template-url": finding.get("template-url"),
                     "name": info.get("name") or finding.get("name"),
                     "severity": info.get("severity") or finding.get("severity"),
-                    "template_id": finding.get("template-id"),
                     "tags": info.get("tags") or finding.get("tags"),
                     "matched_at": finding.get("matched-at"),
                     "type": finding.get("type"),
@@ -198,7 +200,18 @@ def get_sub_job_results(sub_job_id: str, db: Session, page: int = 1, page_size: 
                     "ip": finding.get("ip"),
                     "port": finding.get("port"),
                     "timestamp": finding.get("timestamp")
-                })
+                }
+                # Gather all other fields as extra_fields
+                extra = {}
+                for k, v in finding.items():
+                    if k not in ("template", "template-id", "template-url", "type", "host", "ip", "port", "timestamp", "matched-at", "matcher-status", "info"):
+                        extra[k] = v
+                for k, v in info.items():
+                    if k not in ("name", "severity", "tags"):
+                        extra[k] = v
+                if extra:
+                    out_item["extra_fields"] = extra
+                out.append(out_item)
         elif tool == "wpscan-scan":
             for finding in meta.get("wpscan_results", []):
                 out.append({

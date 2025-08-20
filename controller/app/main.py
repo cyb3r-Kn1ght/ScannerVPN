@@ -12,6 +12,20 @@ from typing import List, Dict, Any, Optional
 from uuid import uuid4
 from pydantic import BaseModel
 from app import models, schemas, database
+from app.database_service import (
+    clear_all_database_tables,
+    clear_scan_results_only,
+    clear_workflows_and_jobs,
+    get_sub_job_results,
+    get_workflow_summary,
+    read_scan_job,
+    read_scan_results,
+    read_scan_results_list,
+    read_scan_jobs,
+    read_scan_jobs_list,
+    get_workflow_status,
+    get_paginated_list
+)
 from app.vpn_service import VPNService
 
 # Khởi tạo FastAPI app
@@ -43,159 +57,13 @@ logger = logging.getLogger(__name__)
 
 # Endpoint: GET /api/sub_jobs/{sub_job_id}/results
 @app.get("/api/sub_jobs/{sub_job_id}/results")
-def get_sub_job_results(sub_job_id: str, db: Session = Depends(get_db)):
-    """
-    Trả về kết quả scan của sub-job theo định dạng phù hợp từng tool.
-    """
-    # Tìm job
-    job = db.query(models.ScanJob).filter(models.ScanJob.job_id == sub_job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Sub-job not found")
-
-    # Lấy kết quả scan (có thể có nhiều bản ghi, thường chỉ 1)
-    results = db.query(models.ScanResult).filter(
-        models.ScanResult.scan_metadata.op('->>')('job_id') == sub_job_id
-    ).all()
-    if not results:
-        return []
-
-    tool = job.tool
-    out = []
-    for r in results:
-        meta = r.scan_metadata or {}
-        if isinstance(meta, str):
-            import json
-            try:
-                meta = json.loads(meta)
-            except Exception:
-                meta = {}
-        # DNS
-        if tool == "dns-lookup":
-            out.append({
-                "target": r.target,
-                "resolved_ips": r.resolved_ips or []
-            })
-        # Port scan
-        elif tool == "port-scan":
-            for p in r.open_ports or []:
-                out.append({
-                    "ip": r.target,
-                    "port": p.get("port"),
-                    "protocol": p.get("protocol"),
-                    "service": p.get("service")
-                })
-        # httpx-scan
-        elif tool == "httpx-scan":
-            for ep in meta.get("httpx_results", []):
-                out.append(ep)
-        # nuclei-scan
-        elif tool == "nuclei-scan":
-            for finding in meta.get("nuclei_results", []):
-                # Lấy các trường chính xác nhất
-                info = finding.get("info", {})
-                out.append({
-                    "name": info.get("name") or finding.get("name"),
-                    "severity": info.get("severity") or finding.get("severity"),
-                    "template_id": finding.get("template-id"),
-                    "tags": info.get("tags") or finding.get("tags"),
-                    "matched_at": finding.get("matched-at"),
-                    "type": finding.get("type"),
-                    "host": finding.get("host"),
-                    "ip": finding.get("ip"),
-                    "port": finding.get("port"),
-                    "timestamp": finding.get("timestamp")
-                })
-        # wpscan-scan
-        elif tool == "wpscan-scan":
-            for finding in meta.get("wpscan_results", []):
-                out.append({
-                    "name": finding.get("name"),
-                    "confidence": finding.get("confidence"),
-                    "fixed_in": finding.get("fixed_in"),
-                    "references": finding.get("references")
-                })
-        # dirsearch-scan
-        elif tool == "dirsearch-scan":
-            for f in meta.get("dirsearch_results", []):
-                out.append(f)
-        else:
-            out.append(meta)
-    return out
+def get_sub_job_results_endpoint(sub_job_id: str, page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=100), db: Session = Depends(get_db)):
+    return get_sub_job_results(sub_job_id, db, page, page_size)
 # Endpoint: GET /api/workflows/{workflow_id}/summary
 
 @app.get("/api/workflows/{workflow_id}/summary")
-def get_workflow_summary(workflow_id: str, db: Session = Depends(get_db)):
-    """
-    Tổng hợp kết quả các tool thành summary_by_target cho từng target.
-    Luôn trả về JSON object, không trả về None/null.
-    """
-    workflow = db.query(models.WorkflowJob).filter(
-        models.WorkflowJob.workflow_id == workflow_id
-    ).first()
-    if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-
-    # Lấy tất cả sub-jobs và kết quả
-    sub_jobs = db.query(models.ScanJob).filter(
-        models.ScanJob.workflow_id == workflow_id
-    ).all()
-    job_ids = [job.job_id for job in sub_jobs]
-    scan_results = db.query(models.ScanResult).filter(
-        models.ScanResult.scan_metadata.op('->>')('job_id').in_(job_ids)
-    ).all()
-
-    # Gom kết quả theo target
-    summary_by_target = {}
-    for r in scan_results:
-        tgt = r.target
-        if tgt not in summary_by_target:
-            summary_by_target[tgt] = {
-                "target": tgt,
-                "dns_records": [],
-                "open_ports": [],
-                "web_technologies": set(),
-                "vulnerabilities": []
-            }
-        # DNS
-        if r.resolved_ips:
-            summary_by_target[tgt]["dns_records"].extend(r.resolved_ips)
-        # Port scan
-        if r.open_ports:
-            for p in r.open_ports:
-                summary_by_target[tgt]["open_ports"].append({
-                    "port": p.get("port"),
-                    "protocol": p.get("protocol"),
-                    "service": p.get("service")
-                })
-        # httpx-scan: lấy webserver
-        meta = r.scan_metadata or {}
-        if isinstance(meta, str):
-            import json
-            try:
-                meta = json.loads(meta)
-            except Exception:
-                meta = {}
-        # httpx-scan
-        if "httpx_results" in meta:
-            for ep in meta["httpx_results"]:
-                ws = ep.get("webserver")
-                if ws:
-                    summary_by_target[tgt]["web_technologies"].add(ws)
-        # nuclei-scan: vulnerabilities + tech
-        if "nuclei_results" in meta:
-            for finding in meta["nuclei_results"]:
-                info = finding.get("info", {})
-                name = finding.get("name") or info.get("name")
-                sev = finding.get("severity") or info.get("severity")
-                if name and sev:
-                    summary_by_target[tgt]["vulnerabilities"].append({"name": name, "severity": sev})
-
-    # Convert set to list for web_technologies
-    for tgt in summary_by_target:
-        summary_by_target[tgt]["web_technologies"] = list(summary_by_target[tgt]["web_technologies"])
-
-    # Always return a JSON object
-    return {"summary": list(summary_by_target.values())}
+def get_workflow_summary_endpoint(workflow_id: str, db: Session = Depends(get_db)):
+    return get_workflow_summary(workflow_id, db)
 
 @app.get("/api/tools")
 def list_tools():
@@ -412,162 +280,59 @@ def update_workflow_progress(workflow_id: str, db: Session):
     db.commit()
 
 @app.get("/api/scan_results", response_model=schemas.PaginatedScanResults)
-def read_scan_results(
-    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
-    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
-    limit: Optional[int] = Query(None, ge=1, le=100, description="Alias for page_size"),
-    target: Optional[str] = Query(None, description="Filter by target"),
-    job_id: Optional[str] = Query(None, description="Filter by job_id"),
-    workflow_id: Optional[str] = Query(None, description="Filter by workflow_id"),
-    latest: bool = Query(False, description="Sort by timestamp descending"),
+def read_scan_results_endpoint(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    target: Optional[str] = Query(None),
+    job_id: Optional[str] = Query(None),
+    workflow_id: Optional[str] = Query(None),
+    latest: bool = Query(False),
     db: Session = Depends(get_db)
 ):
-    """
-    Trả về các scan results với pagination.
-    Có thể lọc theo target, job_id, workflow_id và sắp xếp theo thời gian.
-    """
-    # Use limit as alias for page_size if provided
-    if limit is not None:
-        page_size = limit
-    # Build base query
     query = db.query(models.ScanResult)
-    
-    # Apply filters
     if target:
         query = query.filter(models.ScanResult.target == target)
-    
     if job_id:
-        # Filter by job_id in scan_metadata JSON field
         query = query.filter(models.ScanResult.scan_metadata.op('->>')('job_id') == job_id)
-    
     if workflow_id:
-        # Filter by direct workflow_id field instead of JSON metadata
         query = query.filter(models.ScanResult.workflow_id == workflow_id)
-    
-    # Sort by timestamp
-    if latest:
-        query = query.order_by(models.ScanResult.timestamp.desc())
-    else:
-        query = query.order_by(models.ScanResult.id.desc())  # Default sort by ID descending
-    
-    # Get total count for pagination
-    total_items = query.count()
-    
-    # Calculate pagination
-    import math
-    total_pages = math.ceil(total_items / page_size) if total_items > 0 else 1
-    offset = (page - 1) * page_size
-    has_next = page < total_pages
-    has_previous = page > 1
-    
-    # Get paginated results
-    results = query.offset(offset).limit(page_size).all()
-    
-    # Build pagination response
-    pagination_info = schemas.PaginationInfo(
-        total_items=total_items,
-        total_pages=total_pages,
-        current_page=page,
-        page_size=page_size,
-        has_next=has_next,
-        has_previous=has_previous
-    )
-    
-    return schemas.PaginatedScanResults(
-        pagination=pagination_info,
-        results=results
-    )
-
-@app.get("/api/scan_results/list", response_model=List[schemas.ScanResult])
-def read_scan_results_list(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1),
-    target: Optional[str] = Query(None, description="Filter by target"),
-    job_id: Optional[str] = Query(None, description="Filter by job_id"),
-    latest: bool = Query(False, description="Sort by timestamp descending"),
-    db: Session = Depends(get_db)
-):
-    """
-    Legacy endpoint: Trả về các scan results dạng list (backward compatibility).
-    Sử dụng /api/scan_results thay thế với pagination support.
-    """
-    query = db.query(models.ScanResult)
-    
-    # Apply filters
-    if target:
-        query = query.filter(models.ScanResult.target == target)
-    
-    if job_id:
-        query = query.filter(models.ScanResult.scan_metadata.op('->>')('job_id') == job_id)
-    
-    # Sort by timestamp
     if latest:
         query = query.order_by(models.ScanResult.timestamp.desc())
     else:
         query = query.order_by(models.ScanResult.id.desc())
-    
-    return query.offset(skip).limit(limit).all()
+    return get_paginated_list(query, schemas.PaginatedScanResults, page, page_size)
 
-@app.get("/api/scan_jobs", response_model=schemas.PaginatedScanJobs)
-def read_scan_jobs(
-    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
-    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
+@app.get("/api/scan_results/list", response_model=List[schemas.ScanResult])
+def read_scan_results_list_endpoint(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1),
+    target: Optional[str] = Query(None),
+    job_id: Optional[str] = Query(None),
+    latest: bool = Query(False),
     db: Session = Depends(get_db)
 ):
-    """
-    Trả về các scan jobs với pagination.
-    """
+    return read_scan_results_list(db, skip, limit, target, job_id, latest)
+
+@app.get("/api/scan_jobs", response_model=schemas.PaginatedScanJobs)
+def read_scan_jobs_endpoint(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
     query = db.query(models.ScanJob).order_by(models.ScanJob.id.desc())
-    
-    # Get total count
-    total_items = query.count()
-    
-    # Calculate pagination
-    import math
-    total_pages = math.ceil(total_items / page_size) if total_items > 0 else 1
-    offset = (page - 1) * page_size
-    has_next = page < total_pages
-    has_previous = page > 1
-    
-    # Get paginated results
-    results = query.offset(offset).limit(page_size).all()
-    
-    # Build pagination response
-    pagination_info = schemas.PaginationInfo(
-        total_items=total_items,
-        total_pages=total_pages,
-        current_page=page,
-        page_size=page_size,
-        has_next=has_next,
-        has_previous=has_previous
-    )
-    
-    return schemas.PaginatedScanJobs(
-        pagination=pagination_info,
-        results=results
-    )
+    return get_paginated_list(query, schemas.PaginatedScanJobs, page, page_size)
 
 @app.get("/api/scan_jobs/list", response_model=List[schemas.ScanJob])
-def read_scan_jobs_list(
+def read_scan_jobs_list_endpoint(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1),
     db: Session = Depends(get_db)
 ):
-    """
-    Legacy endpoint: Trả về các scan jobs dạng list (backward compatibility).
-    Sử dụng /api/scan_jobs thay thế với pagination support.
-    """
-    return db.query(models.ScanJob).order_by(models.ScanJob.id.desc()).offset(skip).limit(limit).all()
+    return read_scan_jobs_list(db, skip, limit)
 
 @app.get("/api/scan_jobs/{job_id}", response_model=schemas.ScanJob)
-def read_scan_job(job_id: str, db: Session = Depends(get_db)):
-    """
-    Trả về thông tin của một scan job cụ thể.
-    """
-    job = db.query(models.ScanJob).filter(models.ScanJob.job_id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Scan job not found")
-    return job
+def read_scan_job_endpoint(job_id: str, db: Session = Depends(get_db)):
+    return read_scan_job(job_id, db)
 
 @app.patch("/api/scan_jobs/{job_id}/status")
 def update_job_status(job_id: str, status_update: dict, db: Session = Depends(get_db)):
@@ -1001,27 +766,8 @@ def get_workflows(
     page_size: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
-    """Get paginated workflow jobs"""
     query = db.query(models.WorkflowJob).order_by(models.WorkflowJob.id.desc())
-    
-    total_items = query.count()
-    import math
-    total_pages = math.ceil(total_items / page_size) if total_items > 0 else 1
-    offset = (page - 1) * page_size
-    
-    results = query.offset(offset).limit(page_size).all()
-    
-    return schemas.PaginatedWorkflows(
-        pagination=schemas.PaginationInfo(
-            total_items=total_items,
-            total_pages=total_pages,
-            current_page=page,
-            page_size=page_size,
-            has_next=page < total_pages,
-            has_previous=page > 1
-        ),
-        results=results
-    )
+    return get_paginated_list(query, schemas.PaginatedWorkflows, page, page_size)
 
 @app.get("/api/workflows/{workflow_id}")
 def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
@@ -1189,56 +935,8 @@ def cancel_workflow(workflow_id: str, db: Session = Depends(get_db)):
 
 # Endpoint: GET /api/workflows/{workflow_id}/status
 @app.get("/api/workflows/{workflow_id}/status")
-def get_workflow_status(workflow_id: str, db: Session = Depends(get_db)):
-    """
-    Lấy trạng thái hiện tại của workflow, bao gồm workflow, sub_jobs, progress (theo mockStatusData).
-    """
-    workflow = db.query(models.WorkflowJob).filter(
-        models.WorkflowJob.workflow_id == workflow_id
-    ).first()
-    if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-
-    # Get sub-jobs
-    sub_jobs = db.query(models.ScanJob).filter(
-        models.ScanJob.workflow_id == workflow_id
-    ).order_by(models.ScanJob.step_order).all()
-
-    sub_job_list = []
-    for job in sub_jobs:
-        job_dict = {
-            "job_id": job.job_id,
-            "tool": job.tool,
-            "status": job.status,
-            "step_order": job.step_order
-        }
-        if job.error_message:
-            job_dict["error_message"] = job.error_message
-        sub_job_list.append(job_dict)
-
-    # Progress calculation
-    completed = sum(1 for job in sub_jobs if job.status == "completed")
-    failed = sum(1 for job in sub_jobs if job.status == "failed")
-    total = workflow.total_steps or len(sub_jobs)
-    percentage = ((completed + failed) / total * 100) if total > 0 else 0
-
-    # Compose workflow info
-    workflow_info = {
-        "workflow_id": workflow.workflow_id,
-        "status": workflow.status,
-        "updated_at": getattr(workflow, "updated_at", None) or getattr(workflow, "timestamp", None)
-    }
-
-    return {
-        "workflow": workflow_info,
-        "sub_jobs": sub_job_list,
-        "progress": {
-            "completed": completed,
-            "total": total,
-            "failed": failed,
-            "percentage": percentage
-        }
-    }
+def get_workflow_status_endpoint(workflow_id: str, db: Session = Depends(get_db)):
+    return get_workflow_status(workflow_id, db)
 
 @app.get("/debug/vpn-service")
 async def debug_vpn_service():
@@ -1393,103 +1091,40 @@ async def get_available_countries():
         logger.error(f"Error getting country list: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get countries: {e}")
 
+from app.database_service import clear_all_database_tables, clear_scan_results_only, clear_workflows_and_jobs
+
 @app.delete("/api/database/clear")
-async def clear_all_database_tables():
+async def clear_all_database_tables_endpoint():
     """
     Xóa toàn bộ dữ liệu từ tất cả các bảng trong database.
     Cẩn thận: Thao tác này không thể hoàn tác!
     """
     try:
-        with database.SessionLocal() as db:
-            # Đếm số lượng records trước khi xóa
-            workflow_count = db.query(models.WorkflowJob).count()
-            scan_job_count = db.query(models.ScanJob).count()
-            scan_result_count = db.query(models.ScanResult).count()
-            
-            logger.info(f"Clearing database: {workflow_count} workflows, {scan_job_count} scan jobs, {scan_result_count} scan results")
-            
-            # Xóa theo thứ tự để tránh foreign key constraints
-            # 1. Xóa scan results trước (không có foreign key dependencies)
-            db.query(models.ScanResult).delete()
-            
-            # 2. Xóa scan jobs (có foreign key từ workflow_jobs)
-            db.query(models.ScanJob).delete()
-            
-            # 3. Xóa workflow jobs cuối cùng
-            db.query(models.WorkflowJob).delete()
-            
-            db.commit()
-            
-            logger.info("Database cleared successfully")
-            return {
-                "status": "success",
-                "message": "All database tables cleared successfully",
-                "deleted_counts": {
-                    "workflows": workflow_count,
-                    "scan_jobs": scan_job_count,
-                    "scan_results": scan_result_count
-                }
-            }
-    
+        return clear_all_database_tables()
     except Exception as e:
         logger.error(f"Error clearing database: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clear database: {e}")
 
+
 @app.delete("/api/database/clear/scan_results")
-async def clear_scan_results_only():
+async def clear_scan_results_only_endpoint():
     """
     Xóa chỉ bảng scan_results, giữ lại workflows và scan_jobs.
     """
     try:
-        with database.SessionLocal() as db:
-            result_count = db.query(models.ScanResult).count()
-            
-            logger.info(f"Clearing scan_results table: {result_count} records")
-            
-            db.query(models.ScanResult).delete()
-            db.commit()
-            
-            logger.info("Scan results cleared successfully")
-            return {
-                "status": "success",
-                "message": "Scan results table cleared successfully",
-                "deleted_count": result_count
-            }
-    
+        return clear_scan_results_only()
     except Exception as e:
         logger.error(f"Error clearing scan results: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clear scan results: {e}")
 
+
 @app.delete("/api/database/clear/workflows")
-async def clear_workflows_and_jobs():
+async def clear_workflows_and_jobs_endpoint():
     """
     Xóa workflows và scan_jobs, giữ lại scan_results.
     """
     try:
-        with database.SessionLocal() as db:
-            workflow_count = db.query(models.WorkflowJob).count()
-            scan_job_count = db.query(models.ScanJob).count()
-            
-            logger.info(f"Clearing workflows and jobs: {workflow_count} workflows, {scan_job_count} scan jobs")
-            
-            # Xóa scan jobs trước (có foreign key từ workflow_jobs)
-            db.query(models.ScanJob).delete()
-            
-            # Xóa workflow jobs
-            db.query(models.WorkflowJob).delete()
-            
-            db.commit()
-            
-            logger.info("Workflows and jobs cleared successfully")
-            return {
-                "status": "success",
-                "message": "Workflows and scan jobs cleared successfully",
-                "deleted_counts": {
-                    "workflows": workflow_count,
-                    "scan_jobs": scan_job_count
-                }
-            }
-    
+        return clear_workflows_and_jobs()
     except Exception as e:
         logger.error(f"Error clearing workflows and jobs: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clear workflows and jobs: {e}")

@@ -1184,4 +1184,10 @@ def update_vpn_profile_status_endpoint(
     """
     Cập nhật trạng thái hoặc số lần sử dụng của VPN profile (khi connect/disconnect từ scanner tool).
     """
-    return update_vpn_profile_status(payload, db)
+    return update_vpn_profile_status(
+        db,
+        filename=payload.get("filename"),
+        action=payload.get("action"),
+        scanner_id=payload.get("scanner_id"),
+        status=payload.get("status")
+    )

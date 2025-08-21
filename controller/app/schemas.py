@@ -1,6 +1,28 @@
+
 from pydantic import BaseModel
 from typing import List, Any, Dict, Optional, Union
 from datetime import datetime
+# ============ VPN Profile Schemas ============
+
+class VpnProfileBase(BaseModel):
+    filename: str
+    hostname: Optional[str] = None
+    status: str = "idle"  # idle, connected, disconnected
+    in_use_by: List[str] = []  # Danh sách job_id đang sử dụng VPN này
+
+class VpnProfileCreate(VpnProfileBase):
+    pass
+
+class VpnProfileUpdate(BaseModel):
+    status: Optional[str] = None
+    scanner_id: Optional[str] = None  # job_id
+    action: str  # "connect" hoặc "disconnect"
+
+class VpnProfile(VpnProfileBase):
+    id: int
+
+    class Config:
+        from_attributes = True
 
 class ScanResultCreate(BaseModel):
     target: str

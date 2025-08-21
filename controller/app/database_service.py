@@ -1,3 +1,79 @@
+# Dữ liệu VPN mẫu (có thể tách ra file riêng nếu muốn)
+VPN_PROFILES_BOOTSTRAP = {
+    "VN": [
+        {"filename": "103.57.130.113.ovpn", "hostname": "103.57.130.113", "ip": "103.57.130.113", "country": "VN"},
+        {"filename": "vpngate_42.115.224.83_udp_1457.ovpn", "hostname": "vpngate_42.115.224.83_udp_1457", "ip": "42.115.224.83", "country": "VN"},
+        {"filename": "vpngate_42.115.224.83_tcp_1416.ovpn", "hostname": "vpngate_42.115.224.83_tcp_1416", "ip": "42.115.224.83", "country": "VN"},
+        {"filename": "vpngate_42.114.45.17_udp_1233.ovpn", "hostname": "vpngate_42.114.45.17_udp_1233", "ip": "42.114.45.17", "country": "VN"},
+        {"filename": "vpngate_42.114.45.17_tcp_1443.ovpn", "hostname": "vpngate_42.114.45.17_tcp_1443", "ip": "42.114.45.17", "country": "VN"}
+    ],
+    "KR": [
+        {"filename": "vpngate_221.168.226.24_tcp_1353.ovpn", "hostname": "vpngate_221.168.226.24_tcp_1353", "ip": "221.168.226.24", "country": "KR"},
+        {"filename": "vpngate_61.255.180.199_udp_1619.ovpn", "hostname": "vpngate_61.255.180.199_udp_1619", "ip": "61.255.180.199", "country": "KR"},
+        {"filename": "vpngate_61.255.180.199_tcp_1909.ovpn", "hostname": "vpngate_61.255.180.199_tcp_1909", "ip": "61.255.180.199", "country": "KR"},
+        {"filename": "vpngate_221.168.226.24_udp_1670.ovpn", "hostname": "vpngate_221.168.226.24_udp_1670", "ip": "221.168.226.24", "country": "KR"},
+        {"filename": "vpngate_121.139.214.237_tcp_1961.ovpn", "hostname": "vpngate_121.139.214.237_tcp_1961", "ip": "121.139.214.237", "country": "KR"}
+    ],
+    "JP": [
+        {"filename": "vpngate_106.155.167.26_udp_1635.ovpn", "hostname": "vpngate_106.155.167.26_udp_1635", "ip": "106.155.167.26", "country": "JP"},
+        {"filename": "vpngate_106.155.167.26_tcp_1878.ovpn", "hostname": "vpngate_106.155.167.26_tcp_1878", "ip": "106.155.167.26", "country": "JP"},
+        {"filename": "vpngate_180.35.137.120_tcp_5555.ovpn", "hostname": "vpngate_180.35.137.120_tcp_5555", "ip": "180.35.137.120", "country": "JP"},
+        {"filename": "vpngate_219.100.37.113_tcp_443.ovpn", "hostname": "vpngate_219.100.37.113_tcp_443", "ip": "219.100.37.113", "country": "JP"}
+    ],
+    "GB": [
+        {"filename": "45.149.184.180.ovpn", "hostname": "45.149.184.180", "ip": "45.149.184.180", "country": "GB"}
+    ],
+    "HK": [
+        {"filename": "70.36.97.79.ovpn", "hostname": "70.36.97.79", "ip": "70.36.97.79", "country": "HK"}
+    ]
+}
+
+def init_vpn_profiles_if_empty(db, vpn_data=VPN_PROFILES_BOOTSTRAP):
+    """
+    Khởi tạo dữ liệu bảng vpn_profiles nếu bảng đang trống.
+    vpn_data: dict dạng {country: [list profile dict]}
+    """
+    from app.models import VpnProfile
+    if db.query(VpnProfile).count() == 0:
+        for country, profiles in vpn_data.items():
+            for p in profiles:
+                vpn = VpnProfile(
+                    filename=p["filename"],
+                    hostname=p["hostname"],
+                    ip=p["ip"],
+                    country=country,
+                    status="idle",
+                    in_use_by=[]
+                )
+                db.add(vpn)
+        db.commit()
+# ============ VPN Profile CRUD ============
+from app import models, schemas
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+def get_vpn_profiles(db: Session):
+    vpn_profiles = db.query(models.VpnProfile).all()
+    return [schemas.VpnProfile.from_orm(v) for v in vpn_profiles]
+
+def update_vpn_profile_status(db: Session, filename: str, action: str, scanner_id: str = None, status: str = None):
+    vpn = db.query(models.VpnProfile).filter(models.VpnProfile.filename == filename).first()
+    if not vpn:
+        raise HTTPException(status_code=404, detail="VPN profile not found")
+    if action == "connect":
+        if scanner_id and scanner_id not in (vpn.in_use_by or []):
+            vpn.in_use_by = (vpn.in_use_by or []) + [scanner_id]
+        vpn.status = status or "connected"
+    elif action == "disconnect":
+        if scanner_id and scanner_id in (vpn.in_use_by or []):
+            vpn.in_use_by = [sid for sid in (vpn.in_use_by or []) if sid != scanner_id]
+        if not vpn.in_use_by:
+            vpn.status = status or "idle"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action")
+    db.commit()
+    db.refresh(vpn)
+    return schemas.VpnProfile.from_orm(vpn)
 # --- Generic Pagination Helper ---
 from sqlalchemy.orm import Query
 def get_paginated_list(query: Query, schema_cls, page=1, page_size=10):
@@ -25,6 +101,7 @@ def get_paginated_list(query: Query, schema_cls, page=1, page_size=10):
 def get_workflow_status(workflow_id: str, db):
     """
     Lấy trạng thái hiện tại của workflow, bao gồm workflow, sub_jobs, progress (theo mockStatusData).
+    Bổ sung: trả về target(s), vpn (quốc gia), thời gian tạo workflow.
     """
     workflow = db.query(models.WorkflowJob).filter(
         models.WorkflowJob.workflow_id == workflow_id
@@ -59,7 +136,10 @@ def get_workflow_status(workflow_id: str, db):
     workflow_info = {
         "workflow_id": workflow.workflow_id,
         "status": workflow.status,
-        "updated_at": getattr(workflow, "updated_at", None) or getattr(workflow, "timestamp", None)
+        "updated_at": getattr(workflow, "updated_at", None) or getattr(workflow, "timestamp", None),
+        "created_at": getattr(workflow, "created_at", None) or getattr(workflow, "timestamp", None),
+        "targets": getattr(workflow, "targets", []),
+        "vpn": getattr(workflow, "vpn_country", None) or getattr(workflow, "vpn_profile", None)
     }
 
     return {

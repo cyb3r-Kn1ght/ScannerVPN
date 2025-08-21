@@ -3,7 +3,18 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import datetime
 
+
 Base = declarative_base()
+
+# ============ VPN Profile Model ============
+from sqlalchemy.types import PickleType
+class VpnProfile(Base):
+    __tablename__ = "vpn_profiles"
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, unique=True, index=True)
+    hostname = Column(String, nullable=True)
+    status = Column(String, default="idle")  # idle, connected, disconnected
+    in_use_by = Column(PickleType, default=list)  # List các job_id đang sử dụng VPN này
 
 class ScanResult(Base):
     __tablename__ = "scan_results"

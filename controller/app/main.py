@@ -1096,7 +1096,13 @@ async def get_available_countries():
         logger.error(f"Error getting country list: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get countries: {e}")
 
-from app.database_service import clear_all_database_tables, clear_scan_results_only, clear_workflows_and_jobs
+from app.database_service import (
+    clear_all_database_tables,
+    clear_scan_results_only,
+    clear_workflows_and_jobs,
+    get_vpn_profiles,
+    update_vpn_profile_status
+)
 
 @app.delete("/api/database/clear")
 async def clear_all_database_tables_endpoint():
@@ -1133,3 +1139,37 @@ async def clear_workflows_and_jobs_endpoint():
     except Exception as e:
         logger.error(f"Error clearing workflows and jobs: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clear workflows and jobs: {e}")
+
+# ============ VPN Profile Management API ============
+from fastapi import Body
+
+@app.get("/api/vpn_profiles")
+def get_vpn_profiles_endpoint(db: Session = Depends(get_db)):
+    """
+    Lấy danh sách các VPN profiles trong database (quản lý trạng thái, số lần sử dụng, v.v.).
+    Bổ sung thông tin workflow_id của scanner đang sử dụng VPN này.
+    """
+    vpn_profiles = get_vpn_profiles(db)
+    # Bổ sung workflow_id cho mỗi scanner đang sử dụng VPN này
+    for vpn in vpn_profiles:
+        # scanner_usages là list các dict có scanner_id, status, ...
+        usages = vpn.get('scanner_usages', [])
+        for usage in usages:
+            # Tìm scan job theo scanner_id
+            scanner_id = usage.get('scanner_id')
+            scan_job = db.query(models.ScanJob).filter(models.ScanJob.job_id == scanner_id).first()
+            if scan_job and scan_job.workflow_id:
+                usage['workflow_id'] = scan_job.workflow_id
+            else:
+                usage['workflow_id'] = None
+    return vpn_profiles
+
+@app.post("/api/vpn_profiles/update")
+def update_vpn_profile_status_endpoint(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Cập nhật trạng thái hoặc số lần sử dụng của VPN profile (khi connect/disconnect từ scanner tool).
+    """
+    return update_vpn_profile_status(payload, db)

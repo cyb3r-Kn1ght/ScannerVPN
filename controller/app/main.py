@@ -1162,19 +1162,36 @@ def get_vpn_profiles_endpoint(db: Session = Depends(get_db)):
     Bổ sung thông tin workflow_id của scanner đang sử dụng VPN này.
     """
     vpn_profiles = get_vpn_profiles(db)
-    # Bổ sung workflow_id cho mỗi scanner đang sử dụng VPN này
+    # Chỉ giữ lại các trường cần thiết cho mỗi VPN
+
+    filtered_vpns = []
     for vpn in vpn_profiles:
-        # scanner_usages là list các dict có scanner_id, status, ...
-        usages = getattr(vpn, 'scanner_usages', []) or []
-        for usage in usages:
-            # Tìm scan job theo scanner_id
-            scanner_id = usage.get('scanner_id')
-            scan_job = db.query(models.ScanJob).filter(models.ScanJob.job_id == scanner_id).first()
+        # Lấy workflow_id cho từng job_id trong in_use_by (nếu có)
+        workflow_ids = []
+        for job_id in vpn.in_use_by:
+            scan_job = db.query(models.ScanJob).filter(models.ScanJob.job_id == job_id).first()
             if scan_job and scan_job.workflow_id:
-                usage['workflow_id'] = scan_job.workflow_id
-            else:
-                usage['workflow_id'] = None
-    return vpn_profiles
+                workflow_ids.append(scan_job.workflow_id)
+        # Nếu có ít nhất 1 workflow_id, lấy unique (set) và trả về list, hoặc None nếu không có
+        filtered_vpns.append({
+            "filename": vpn.filename,
+            "hostname": vpn.hostname,
+            "status": vpn.status,
+            "in_use_by": vpn.in_use_by,
+            "workflow_id": list(set(workflow_ids)) if workflow_ids else None,
+            "ip": getattr(vpn, "ip", None),
+            "country": getattr(vpn, "country", None),
+            "id": vpn.id
+        })
+
+    # Tính số VPN đang được sử dụng (status != 'idle' hoặc có in_use_by)
+    in_use_count = sum(1 for v in filtered_vpns if v["status"] != "idle" or (v["in_use_by"] or []))
+    return {
+        "status": "success",
+        "total": len(filtered_vpns),
+        "in_use": in_use_count,
+        "vpns": filtered_vpns
+    }
 
 @app.post("/api/vpn_profiles/update")
 def update_vpn_profile_status_endpoint(

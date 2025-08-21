@@ -30,7 +30,19 @@ from app.database_service import (
 from app.vpn_service import VPNService
 
 # Khởi tạo FastAPI app
+
 app = FastAPI()
+
+# --- Auto-populate VPN profiles table if empty ---
+from app.database_service import init_vpn_profiles_if_empty
+from sqlalchemy.exc import OperationalError
+try:
+    db = database.SessionLocal()
+    init_vpn_profiles_if_empty(db)
+    db.close()
+except OperationalError as e:
+    # Table might not exist yet (first run), ignore
+    pass
 
 # Định nghĩa get_db để lấy session DB
 def get_db():

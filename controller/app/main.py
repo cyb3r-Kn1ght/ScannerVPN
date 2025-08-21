@@ -1165,7 +1165,7 @@ def get_vpn_profiles_endpoint(db: Session = Depends(get_db)):
     # Bổ sung workflow_id cho mỗi scanner đang sử dụng VPN này
     for vpn in vpn_profiles:
         # scanner_usages là list các dict có scanner_id, status, ...
-        usages = vpn.get('scanner_usages', [])
+        usages = getattr(vpn, 'scanner_usages', []) or []
         for usage in usages:
             # Tìm scan job theo scanner_id
             scanner_id = usage.get('scanner_id')

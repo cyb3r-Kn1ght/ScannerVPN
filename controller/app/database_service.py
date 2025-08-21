@@ -62,11 +62,14 @@ def update_vpn_profile_status(db: Session, filename: str, action: str, scanner_i
         raise HTTPException(status_code=404, detail="VPN profile not found")
     if action == "connect":
         if scanner_id and scanner_id not in (vpn.in_use_by or []):
-            vpn.in_use_by = (vpn.in_use_by or []) + [scanner_id]
+            new_in_use = list(vpn.in_use_by or [])
+            new_in_use.append(scanner_id)
+            vpn.in_use_by = new_in_use  # Gán lại để SQLAlchemy nhận biết thay đổi
         vpn.status = status or "connected"
     elif action == "disconnect":
         if scanner_id and scanner_id in (vpn.in_use_by or []):
-            vpn.in_use_by = [sid for sid in (vpn.in_use_by or []) if sid != scanner_id]
+            new_in_use = [sid for sid in (vpn.in_use_by or []) if sid != scanner_id]
+            vpn.in_use_by = new_in_use
         if not vpn.in_use_by:
             vpn.status = status or "idle"
     else:

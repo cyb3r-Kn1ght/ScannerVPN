@@ -13,6 +13,8 @@ class VpnProfile(Base):
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String, unique=True, index=True)
     hostname = Column(String, nullable=True)
+    ip = Column(String, nullable=True)  # Thêm trường IP cho VPN
+    country = Column(String, nullable=True)  # Thêm trường country cho VPN
     status = Column(String, default="idle")  # idle, connected, disconnected
     in_use_by = Column(PickleType, default=list)  # List các job_id đang sử dụng VPN này
 

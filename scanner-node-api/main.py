@@ -48,7 +48,8 @@ def execute_scan(req: ScanRequest):
 
 
 def _create_job(req: ScanRequest):
-    job_name = f"{req.tool}-scan-{int(time.time())}"
+    import uuid
+    job_name = f"{req.tool}-scan-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     
     # Tạo environment variables cho container
     env_vars = [

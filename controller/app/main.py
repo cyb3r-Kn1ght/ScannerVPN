@@ -557,26 +557,14 @@ def create_workflow_scan(
         if step.tool_id not in available_tools:
             raise HTTPException(status_code=404, detail=f"Tool not found: {step.tool_id}")
     
-    # Validate strategy
-    if req.strategy not in ["wide", "deep"]:
-        raise HTTPException(status_code=400, detail="Strategy must be 'wide' or 'deep'")
-    
-    # 1. Tạo workflow job tổng
+    # 1. Tạo workflow job tổng (không cần strategy)
     workflow_id = f"workflow-{uuid4().hex[:8]}"
-    
-    # Calculate total steps based on strategy
-    if req.strategy == "wide":
-        # Wide: 1 job per tool (each job scans all targets)
-        total_steps = len(req.steps)
-    else:
-        # Deep: 1 job per (target + tool) combination
-        total_steps = len(req.targets) * len(req.steps)
-    
+    # Tổng số sub-job sẽ được tính sau khi tạo xong sub_jobs
     workflow_job = models.WorkflowJob(
         workflow_id=workflow_id,
         targets=req.targets,
-        strategy=req.strategy,
-        total_steps=total_steps,
+        strategy=None,
+        total_steps=0,
         vpn_profile=req.vpn_profile,
         vpn_country=req.country
     )
@@ -625,85 +613,75 @@ def create_workflow_scan(
     except Exception as e:
         logger.warning(f"Failed to assign VPN for workflow {workflow_id}: {e}")
     
-    # 3. Tạo sub-jobs theo strategy
+    # 3. Tạo sub-jobs cho từng step/tool
     sub_jobs = []
     failed_jobs = []
     step_counter = 0
 
-    def map_ports_param(tool_id, params):
-        # Map 'ports': 'top-1000' to 'ports': '1000' for port-scan
-        if tool_id == "port-scan" and isinstance(params, dict):
-            ports_val = params.get("ports")
-            if isinstance(ports_val, str) and ports_val.strip().lower() == "top-1000":
-                params = params.copy()
-                params["ports"] = "1000"
-        return params
+    for i, step in enumerate(req.steps):
+        try:
+            # --- Custom logic for port-scan sharding ---
+            if step.tool_id == "port-scan":
+                params = step.params.copy() if step.params else {}
+                scanner_count = params.get("scanner_count")
+                vpn_profiles = params.get("vpn_profile")
+                port_option = params.get("ports")
+                # Nếu có scanner_count > 1 và vpn_profile là mảng, chia nhỏ sub-job
+                if isinstance(vpn_profiles, list) and scanner_count and int(scanner_count) > 1:
+                    if port_option == "top-1000":
+                        port_list = parse_nmap_top_ports("nmap-ports-top1000.txt")
+                    elif port_option == "all":
+                        port_list = parse_ports_all("Ports-1-To-65535.txt")
+                    else:
+                        port_list = parse_ports_custom(port_option)
+                    port_chunks = split_ports(port_list, int(scanner_count))
+                    for idx, chunk in enumerate(port_chunks):
+                        if not chunk:
+                            continue
+                        step_counter += 1
+                        job_id = f"scan-port-scan-{uuid4().hex[:6]}"
+                        chunk_params = params.copy()
+                        chunk_params["ports"] = ",".join(str(p) for p in chunk)
+                        chunk_vpn = vpn_profiles[idx] if idx < len(vpn_profiles) else None
+                        sub_job = models.ScanJob(
+                            job_id=job_id,
+                            tool=step.tool_id,
+                            targets=req.targets,
+                            options=chunk_params,
+                            workflow_id=workflow_id,
+                            step_order=step_counter,
+                            vpn_profile=chunk_vpn,
+                            vpn_country=req.country,
+                            vpn_assignment=None
+                        )
+                        db.add(sub_job)
+                        sub_jobs.append(sub_job)
+                        logger.info(f"Created port-scan sub-job {job_id} chunk {idx+1}/{scanner_count} with VPN {chunk_vpn}")
+                    continue  # skip default logic for this step
+            # --- Default logic for all other tools (and port-scan không chia nhỏ) ---
+            step_counter += 1
+            job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
+            step_params = step.params.copy() if step.params else {}
+            sub_job = models.ScanJob(
+                job_id=job_id,
+                tool=step.tool_id,
+                targets=req.targets,
+                options=step_params,
+                workflow_id=workflow_id,
+                step_order=step_counter,
+                vpn_profile=req.vpn_profile,
+                vpn_country=req.country,
+                vpn_assignment=vpn_assignment
+            )
+            db.add(sub_job)
+            sub_jobs.append(sub_job)
+            logger.info(f"Created job {job_id} for tool {step.tool_id} with {len(req.targets)} targets")
+        except Exception as e:
+            logger.error(f"Failed to create sub-job for step {i+1}: {e}")
+            failed_jobs.append({"step": i+1, "tool": step.tool_id, "error": str(e)})
 
-    if req.strategy == "wide":
-        # Wide Strategy: 1 job per tool, each job handles all targets
-        for i, step in enumerate(req.steps):
-            try:
-                step_counter += 1
-                job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
-
-                # Map ports param for port-scan
-                step_params = map_ports_param(step.tool_id, step.params)
-
-                sub_job = models.ScanJob(
-                    job_id=job_id,
-                    tool=step.tool_id,
-                    targets=req.targets,  # All targets for this tool
-                    options=step_params,
-                    workflow_id=workflow_id,
-                    step_order=step_counter,
-                    vpn_profile=req.vpn_profile,
-                    vpn_country=req.country,
-                    vpn_assignment=vpn_assignment
-                )
-                db.add(sub_job)
-                sub_jobs.append(sub_job)
-
-                logger.info(f"Created WIDE job {job_id} for tool {step.tool_id} with {len(req.targets)} targets")
-
-            except Exception as e:
-                logger.error(f"Failed to create wide sub-job for step {i+1}: {e}")
-                failed_jobs.append({"step": i+1, "tool": step.tool_id, "error": str(e)})
-
-    else:  # Deep Strategy
-        # Deep Strategy: 1 job per (target + tool) combination
-        for target_idx, target in enumerate(req.targets):
-            for step_idx, step in enumerate(req.steps):
-                try:
-                    step_counter += 1
-                    job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
-
-                    # Map ports param for port-scan
-                    step_params = map_ports_param(step.tool_id, step.params)
-
-                    sub_job = models.ScanJob(
-                        job_id=job_id,
-                        tool=step.tool_id,
-                        targets=[target],  # Single target for this job
-                        options=step_params,
-                        workflow_id=workflow_id,
-                        step_order=step_counter,
-                        vpn_profile=req.vpn_profile,
-                        vpn_country=req.country,
-                        vpn_assignment=vpn_assignment
-                    )
-                    db.add(sub_job)
-                    sub_jobs.append(sub_job)
-
-                    logger.info(f"Created DEEP job {job_id} for tool {step.tool_id} with target {target}")
-
-                except Exception as e:
-                    logger.error(f"Failed to create deep sub-job for target {target}, tool {step.tool_id}: {e}")
-                    failed_jobs.append({
-                        "target": target, 
-                        "tool": step.tool_id, 
-                        "error": str(e)
-                    })
-
+    # Cập nhật lại tổng số sub-job
+    workflow_job.total_steps = len(sub_jobs)
     db.commit()
     
     # 4. Submit all jobs to scanner nodes (parallel execution)

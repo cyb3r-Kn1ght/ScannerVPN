@@ -153,4 +153,9 @@ def _create_job(req: ScanRequest):
         batch_v1.create_namespaced_job(namespace=NAMESPACE, body=job)
         return {"job_name": job_name, "status": "created"}
     except client.rest.ApiException as e:
+        print(f"[ERROR] Failed to create job: {e}")
+        if hasattr(e, 'body'):
+            print(f"[ERROR] Exception body: {e.body}")
+        print(f"[ERROR] Job spec: {job}")
+        print(f"[ERROR] Env vars: {env_vars}")
         raise HTTPException(status_code=500, detail=f"Failed to create job: {e}")

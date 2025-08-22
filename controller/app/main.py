@@ -1,4 +1,4 @@
-from port_utils import parse_nmap_top_ports, parse_ports_all, parse_ports_custom, split_ports
+from app.port_utils import parse_nmap_top_ports, parse_ports_all, parse_ports_custom, split_ports
 import os
 import json
 import math

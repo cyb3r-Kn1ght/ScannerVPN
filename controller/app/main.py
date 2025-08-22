@@ -1,5 +1,5 @@
-from app.port_utils import parse_nmap_top_ports, parse_ports_all, parse_ports_custom, split_ports
 import os
+from app.port_utils import parse_nmap_top_ports, parse_ports_all, parse_ports_custom, split_ports
 import json
 import math
 import random
@@ -628,7 +628,6 @@ def create_workflow_scan(
                 port_option = params.get("ports")
                 # Nếu có scanner_count > 1 và vpn_profile là mảng, chia nhỏ sub-job
                 if isinstance(vpn_profiles, list) and scanner_count and int(scanner_count) > 1:
-                    import os
                     base_dir = os.path.dirname(__file__)
                     if port_option == "top-1000":
                         port_list = parse_nmap_top_ports(os.path.join(base_dir, "nmap-ports-top1000.txt"))

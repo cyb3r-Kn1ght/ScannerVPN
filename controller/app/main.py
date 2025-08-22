@@ -723,14 +723,51 @@ def create_workflow_scan(
         } if vpn_assignment else None
     }
 
-@app.get("/api/workflows", response_model=schemas.PaginatedWorkflows)
+@app.get("/api/workflows")
 def get_workflows(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
     query = db.query(models.WorkflowJob).order_by(models.WorkflowJob.id.desc())
-    return get_paginated_list(query, schemas.PaginatedWorkflows, page, page_size)
+    total = query.count()
+    workflows = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    # Tính lại completed_steps, failed_steps, status cho từng workflow
+    for wf in workflows:
+        completed = db.query(models.ScanJob).filter(
+            models.ScanJob.workflow_id == wf.workflow_id,
+            models.ScanJob.status == "completed"
+        ).count()
+        failed = db.query(models.ScanJob).filter(
+            models.ScanJob.workflow_id == wf.workflow_id,
+            models.ScanJob.status == "failed"
+        ).count()
+        wf.completed_steps = completed
+        wf.failed_steps = failed
+        if completed + failed >= wf.total_steps:
+            if failed == 0:
+                wf.status = "completed"
+            else:
+                wf.status = "partially_failed"
+        elif completed + failed == 0:
+            wf.status = "pending"
+        else:
+            wf.status = "running"
+    db.commit()
+
+    # Chuẩn hóa trả về đúng format dashboard (pagination + results)
+    return {
+        "pagination": {
+            "total_items": total,
+            "total_pages": (total + page_size - 1) // page_size,
+            "current_page": page,
+            "page_size": page_size,
+            "has_next": (page * page_size) < total,
+            "has_previous": page > 1
+        },
+        "results": workflows
+    }
 
 @app.get("/api/workflows/{workflow_id}")
 def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
@@ -740,6 +777,28 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
     ).first()
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Tính lại completed_steps, failed_steps, status cho workflow này
+    completed = db.query(models.ScanJob).filter(
+        models.ScanJob.workflow_id == workflow.workflow_id,
+        models.ScanJob.status == "completed"
+    ).count()
+    failed = db.query(models.ScanJob).filter(
+        models.ScanJob.workflow_id == workflow.workflow_id,
+        models.ScanJob.status == "failed"
+    ).count()
+    workflow.completed_steps = completed
+    workflow.failed_steps = failed
+    if completed + failed >= workflow.total_steps:
+        if failed == 0:
+            workflow.status = "completed"
+        else:
+            workflow.status = "partially_failed"
+    elif completed + failed == 0:
+        workflow.status = "pending"
+    else:
+        workflow.status = "running"
+    db.commit()
 
     # Get sub-jobs
     sub_jobs = db.query(models.ScanJob).filter(
@@ -760,7 +819,6 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
             results_by_job[job_id].append(r)
 
     def nuclei_flatten(find):
-        # Common fields always present
         info = find.get('info', {}) or {}
         out = {
             "template": find.get("template"),
@@ -776,12 +834,10 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
             "port": find.get("port"),
             "timestamp": find.get("timestamp"),
         }
-        # Gather all other fields as extra_fields
         extra = {}
         for k, v in find.items():
             if k not in ("template", "template-id", "template-url", "type", "host", "ip", "port", "timestamp", "matched-at", "matcher-status", "info"):
                 extra[k] = v
-        # Also add all info fields except name, severity, tags
         for k, v in info.items():
             if k not in ("name", "severity", "tags"):
                 extra[k] = v
@@ -790,7 +846,6 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
         return out
 
     def portscan_flatten(r):
-        # open_ports là list dict
         return [
             {"ip": r.target, "port": p.get("port"), "service": p.get("service"), "protocol": p.get("protocol"), "version": p.get("version", "")}
             for p in (r.open_ports or [])
@@ -802,7 +857,6 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
     import json
     def httpx_flatten(r):
         meta = r.scan_metadata or {}
-        # Nếu meta là str (TEXT), parse lại thành dict
         if isinstance(meta, str):
             try:
                 meta = json.loads(meta)
@@ -838,13 +892,11 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
         job_id = job.job_id
         tool = job.tool
         job_results = results_by_job.get(job_id, [])
-        # Tổng hợp kết quả cho từng tool
         results = []
         if tool in tool_result_map:
             for r in job_results:
                 results.extend(tool_result_map[tool](r))
         else:
-            # fallback: trả raw scan_metadata
             for r in job_results:
                 results.append(r.scan_metadata)
 
@@ -858,9 +910,6 @@ def get_workflow_detail(workflow_id: str, db: Session = Depends(get_db)):
         }
         sub_job_details.append(job_detail)
 
-    # Tính lại progress thực tế dựa trên trạng thái sub_jobs
-    completed = sum(1 for job in sub_jobs if job.status == "completed")
-    failed = sum(1 for job in sub_jobs if job.status == "failed")
     total = workflow.total_steps
     percentage = (completed / total * 100) if total > 0 else 0
     return {
@@ -1069,14 +1118,10 @@ from app.database_service import (
 @app.delete("/api/database/clear")
 async def clear_all_database_tables_endpoint():
     """
-    Xóa toàn bộ dữ liệu từ tất cả các bảng trong database.
-    Cẩn thận: Thao tác này không thể hoàn tác!
+    Xóa toàn bộ dữ liệu từ tất cả các bảng trong database. Cẩn thận: Thao tác này không thể hoàn tác!
     """
-    try:
-        return clear_all_database_tables()
-    except Exception as e:
-        logger.error(f"Error clearing database: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to clear database: {e}")
+    clear_all_database_tables()
+    return {"status": "success", "message": "All database tables cleared."}
 
 
 @app.delete("/api/database/clear/scan_results")

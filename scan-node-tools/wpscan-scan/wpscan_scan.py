@@ -85,11 +85,12 @@ if __name__ == "__main__":
             print(f"[!] Failed to parse VPN assignment: {e}")
     
     # Thử setup VPN (optional - có thể skip nếu proxy server không available)
+    vpn_profile_info = None
     try:
         print("[*] Checking initial network status...")
         initial_info = vpn_manager.get_network_info()
         print(f"[*] Initial IP: {initial_info['public_ip']}")
-        
+
         # Sử dụng assigned VPN nếu có, nếu không thì dùng random
         if assigned_vpn:
             if vpn_manager.setup_specific_vpn(assigned_vpn):
@@ -97,23 +98,37 @@ if __name__ == "__main__":
                 vpn_manager.print_vpn_status()
                 network_info = vpn_manager.get_network_info()
                 vpn_connected = True
+                vpn_profile_info = assigned_vpn
             else:
                 print("[!] Failed to connect to assigned VPN, trying random...")
-                if vpn_manager.setup_random_vpn():
-                    print("[+] Connected to random VPN as fallback!")
-                    vpn_manager.print_vpn_status()
-                    network_info = vpn_manager.get_network_info()
-                    vpn_connected = True
-        else:
-            # Fallback to random VPN nếu không có assignment
-            print("[*] No VPN assignment from Controller, using random VPN...")
+        if not vpn_connected:
+            print("[*] No VPN assignment from Controller or failed, using random VPN...")
             if vpn_manager.setup_random_vpn():
                 print("[+] VPN setup completed!")
                 vpn_manager.print_vpn_status()
                 network_info = vpn_manager.get_network_info()
                 vpn_connected = True
+                vpn_profile_info = {
+                    "filename": network_info.get("vpn_filename", "random"),
+                    "hostname": network_info.get("vpn_hostname", "random")
+                }
             else:
                 print("[!] VPN connection failed, continuing without VPN...")
+
+        # Gửi thông báo connect VPN về controller nếu kết nối thành công
+        if vpn_connected and controller_url and vpn_profile_info:
+            try:
+                job_id = os.getenv("JOB_ID")
+                payload = {
+                    "filename": vpn_profile_info.get("filename"),
+                    "action": "connect",
+                    "scanner_id": job_id
+                }
+                print(f"[+] Notify controller: connect {payload}")
+                resp = requests.post(f"{controller_url}/api/vpn_profiles/update", json=payload, timeout=10)
+                print(f"[+] Controller connect response: {resp.status_code}")
+            except Exception as notify_err:
+                print(f"[!] Failed to notify controller connect: {notify_err}")
     except Exception as e:
         print(f"[!] VPN setup error: {e}, continuing without VPN...")
     
@@ -197,6 +212,20 @@ if __name__ == "__main__":
         print("WPScan completed")
         
     finally:
+        # Gửi thông báo disconnect VPN về controller nếu đã connect VPN
+        if vpn_connected and controller_url and vpn_profile_info:
+            try:
+                job_id = os.getenv("JOB_ID")
+                payload = {
+                    "filename": vpn_profile_info.get("filename"),
+                    "action": "disconnect",
+                    "scanner_id": job_id
+                }
+                print(f"[+] Notify controller: disconnect {payload}")
+                resp = requests.post(f"{controller_url}/api/vpn_profiles/update", json=payload, timeout=10)
+                print(f"[+] Controller disconnect response: {resp.status_code}")
+            except Exception as notify_err:
+                print(f"[!] Failed to notify controller disconnect: {notify_err}")
         # Cleanup VPN
         if vpn_connected:
             print("[*] Disconnecting VPN...")

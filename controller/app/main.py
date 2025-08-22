@@ -1,4 +1,4 @@
-
+from port_utils import parse_nmap_top_ports, parse_ports_all, parse_ports_custom, split_ports
 import os
 import json
 import math
@@ -70,7 +70,56 @@ logger = logging.getLogger(__name__)
 
 # Endpoint: GET /api/sub_jobs/{sub_job_id}/results
 @app.get("/api/sub_jobs/{sub_job_id}/results")
-def get_sub_job_results_endpoint(sub_job_id: str, page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=100), db: Session = Depends(get_db)):
+def get_sub_job_results_endpoint(
+    sub_job_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    # Lấy ScanJob hiện tại
+    job = db.query(models.ScanJob).filter(models.ScanJob.job_id == sub_job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+
+    # Nếu là port-scan và thuộc workflow, thực hiện merge kết quả các sub-job cùng nhóm
+    if job.tool == "port-scan" and job.workflow_id:
+        # Lấy tất cả sub-job cùng workflow, cùng target, cùng tool, cùng step_order
+        sub_jobs = db.query(models.ScanJob).filter(
+            models.ScanJob.workflow_id == job.workflow_id,
+            models.ScanJob.tool == "port-scan",
+            models.ScanJob.step_order == job.step_order,
+            models.ScanJob.targets == job.targets
+        ).all()
+        job_ids = [j.job_id for j in sub_jobs]
+        # Lấy tất cả ScanResult của các sub-job này
+        scan_results = db.query(models.ScanResult).filter(
+            models.ScanResult.scan_metadata.op('->>')('job_id').in_(job_ids)
+        ).all()
+        # Merge open_ports
+        merged_ports = []
+        seen = set()
+        for r in scan_results:
+            for p in (r.open_ports or []):
+                key = (p.get("ip"), p.get("port"), p.get("protocol", "tcp"))
+                if key not in seen:
+                    seen.add(key)
+                    merged_ports.append(p)
+        # Format trả về như cũ (có phân trang nếu cần)
+        total = len(merged_ports)
+        start = (page - 1) * page_size
+        end = start + page_size
+        return {
+            "pagination": {
+                "total_items": total,
+                "total_pages": (total + page_size - 1) // page_size,
+                "current_page": page,
+                "page_size": page_size,
+                "has_next": end < total,
+                "has_previous": page > 1
+            },
+            "results": merged_ports[start:end]
+        }
+    # Nếu không phải port-scan chia nhỏ, trả về như cũ
     return get_sub_job_results(sub_job_id, db, page, page_size)
 # Endpoint: GET /api/workflows/{workflow_id}/summary
 
@@ -1213,3 +1262,35 @@ def update_vpn_profile_status_endpoint(
         scanner_id=payload.get("scanner_id"),
         status=payload.get("status")
     )
+# --- Sub-scanner logic for portscan ---
+def create_portscan_subjobs(request_data):
+    """
+    Xử lý chia port và tạo sub-job cho portscan theo số lượng scanner.
+    request_data: dict chứa thông tin request từ dashboard.
+    """
+    targets = request_data["targets"]
+    scanner_count = request_data.get("scanner_count", 1)
+    port_option = request_data["steps"][0]["params"]["ports"]  # "top-1000", "all", hoặc chuỗi custom
+
+    # Lấy danh sách port
+    if port_option == "top-1000":
+        port_list = parse_nmap_top_ports("nmap-ports-top1000.txt")
+    elif port_option == "all":
+        port_list = parse_ports_all("Ports-1-To-65535.txt")
+    else:
+        port_list = parse_ports_custom(port_option)
+
+    # Nếu không truyền hoặc = 1, tạo 1 sub-job như cũ cho mỗi target
+    if not scanner_count or scanner_count <= 1:
+        for target in targets:
+            # TODO: create_subjob(target, port_list, ...)
+            pass
+    else:
+        # Chia port thành N phần
+        port_chunks = split_ports(port_list, scanner_count)
+        for target in targets:
+            for idx, chunk in enumerate(port_chunks):
+                if not chunk:
+                    continue
+                # TODO: create_subjob(target, chunk, ...)
+                pass

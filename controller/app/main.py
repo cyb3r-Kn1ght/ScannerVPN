@@ -628,10 +628,12 @@ def create_workflow_scan(
                 port_option = params.get("ports")
                 # Nếu có scanner_count > 1 và vpn_profile là mảng, chia nhỏ sub-job
                 if isinstance(vpn_profiles, list) and scanner_count and int(scanner_count) > 1:
+                    import os
+                    base_dir = os.path.dirname(__file__)
                     if port_option == "top-1000":
-                        port_list = parse_nmap_top_ports("nmap-ports-top1000.txt")
+                        port_list = parse_nmap_top_ports(os.path.join(base_dir, "nmap-ports-top1000.txt"))
                     elif port_option == "all":
-                        port_list = parse_ports_all("Ports-1-To-65535.txt")
+                        port_list = parse_ports_all(os.path.join(base_dir, "Ports-1-To-65535.txt"))
                     else:
                         port_list = parse_ports_custom(port_option)
                     port_chunks = split_ports(port_list, int(scanner_count))
@@ -737,7 +739,7 @@ def create_workflow_scan(
         "workflow_id": workflow_id,
         "status": workflow_job.status,
         "strategy": req.strategy,
-        "total_steps": total_steps,
+    "total_steps": workflow_job.total_steps,
         "total_targets": len(req.targets),
         "total_tools": len(req.steps),
         "successful_submissions": len(successful_submissions),
@@ -1252,9 +1254,9 @@ def create_portscan_subjobs(request_data):
 
     # Lấy danh sách port
     if port_option == "top-1000":
-        port_list = parse_nmap_top_ports("nmap-ports-top1000.txt")
+        port_list = parse_nmap_top_ports(os.path.join(os.path.dirname(__file__), "nmap-ports-top1000.txt"))
     elif port_option == "all":
-        port_list = parse_ports_all("Ports-1-To-65535.txt")
+        port_list = parse_ports_all(os.path.join(os.path.dirname(__file__), "Ports-1-To-65535.txt"))
     else:
         port_list = parse_ports_custom(port_option)
 

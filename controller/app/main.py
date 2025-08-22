@@ -81,141 +81,76 @@ def get_workflow_summary_endpoint(workflow_id: str, db: Session = Depends(get_db
 @app.get("/api/tools")
 def list_tools():
     """
-    Trả về danh sách các tool, bao gồm id, name, description, fields (dùng cho form frontend).
+    Trả về danh sách các tool, đúng format dashboard yêu cầu, bổ sung các param thực tế và các cải tiến UI.
     """
-    logger.info(f"API call to /api/tools, returning {len(TOOLS)} tools (frontend format)")
+    logger.info(f"API call to /api/tools, returning {len(TOOLS)} tools (dashboard format)")
 
-    # Mapping for each tool to frontend form format
-    tool_form_map = {
-        "port-scan": {
+    frontend_tools = [
+        {
             "id": "port-scan",
             "name": "Quét Cổng (Port Scan)",
             "description": "Sử dụng Nmap để phát hiện các cổng đang mở trên mục tiêu.",
             "fields": [
-                {
-                    "name": "all_ports",
-                    "label": "Quét toàn bộ 65535 cổng",
-                    "component": "Switch",
-                    "defaultValue": False
-                },
-                {
-                    "name": "ports",
-                    "label": "Hoặc nhập các cổng cụ thể",
-                    "component": "TextInput",
-                    "placeholder": "vd: 80,443,8080"
-                },
-                {
-                    "name": "scan_type",
-                    "label": "Loại scan",
-                    "component": "Select",
-                    "defaultValue": "-sS",
-                    "data": [
-                        {"value": "-sS", "label": "TCP SYN (-sS)"},
-                        {"value": "-sT", "label": "TCP Connect (-sT)"}
-                    ]
-                }
+                {"name": "all_ports", "label": "Quét toàn bộ 65535 cổng", "component": "Switch", "defaultValue": False},
+                {"name": "ports", "label": "Hoặc nhập các cổng cụ thể", "component": "TextInput", "placeholder": "vd: 80,443,8080",
+                 "presets": [
+                     {"label": "Top 1000 Ports", "value": "top-1000"},
+                     {"label": "Web Ports", "value": "80,443,8080,8443"},
+                     {"label": "Database Ports", "value": "3306,5432,1433,27017"}
+                 ]},
+                {"name": "scan_type", "label": "Loại scan", "component": "Select", "defaultValue": "-sS",
+                 "data": [
+                     {"value": "-sS", "label": "TCP SYN (-sS)"},
+                     {"value": "-sT", "label": "TCP Connect (-sT)"}
+                 ]}
             ]
         },
-        "nuclei-scan": {
-            "id": "nuclei-scan",
-            "name": "Quét Lỗ hổng (Nuclei)",
-            "description": "Sử dụng Nuclei để tìm kiếm các lỗ hổng đã biết.",
-            "fields": [
-                {
-                    "name": "severity",
-                    "label": "Mức độ nghiêm trọng",
-                    "component": "MultiSelect",
-                    "defaultValue": ["high", "critical"],
-                    "data": ["info", "low", "medium", "high", "critical"]
-                },
-                {
-                    "name": "templates",
-                    "label": "Chạy các mẫu cụ thể (tùy chọn)",
-                    "component": "MultiSelect",
-                    "placeholder": "Để trống để chạy các mẫu được đề xuất",
-                    "data": ["cves", "default-logins", "exposed-panels", "vulnerabilities"]
-                }
-            ]
-        },
-        "wpscan-scan": {
-            "id": "wpscan-scan",
-            "name": "Quét WordPress (WPScan)",
-            "description": "Tìm kiếm các lỗ hổng phổ biến trên các trang web WordPress.",
-            "fields": [
-                {
-                    "name": "enumerate",
-                    "label": "Phát hiện các thành phần",
-                    "component": "MultiSelect",
-                    "defaultValue": ["p", "t"],
-                    "data": [
-                        {"value": "p", "label": "Plugins (p)"},
-                        {"value": "t", "label": "Themes (t)"},
-                        {"value": "u", "label": "Users (u)"}
-                    ]
-                }
-            ]
-        },
-        "dns-lookup": {
-            "id": "dns-lookup",
-            "name": "Phân giải DNS",
-            "description": "Thực hiện các truy vấn DNS cơ bản.",
-            "fields": []
-        },
-        "httpx-scan": {
+        {
             "id": "httpx-scan",
             "name": "Kiểm tra HTTPX",
             "description": "Kiểm tra thông tin HTTP, tiêu đề, trạng thái, SSL, v.v.",
             "fields": [
-                {
-                    "name": "follow_redirects",
-                    "label": "Theo dõi chuyển hướng (redirect)",
-                    "component": "Switch",
-                    "defaultValue": True
-                },
-                {
-                    "name": "status_codes",
-                    "label": "Chỉ lấy các mã trạng thái (tuỳ chọn)",
-                    "component": "TextInput",
-                    "placeholder": "vd: 200,301,302"
-                }
+                {"name": "follow_redirects", "label": "Theo dõi chuyển hướng", "component": "Switch", "defaultValue": True},
+                {"name": "status_codes", "label": "Lọc theo mã trạng thái", "component": "Combobox", "placeholder": "vd: 200,301,404",
+                 "data": ["200,204", "301,302,307", "400,401,403", "500,502,503"]}
             ]
         },
-        "dirsearch-scan": {
+        {
             "id": "dirsearch-scan",
             "name": "Quét thư mục (Dirsearch)",
             "description": "Tìm kiếm các thư mục và file ẩn trên web server.",
             "fields": [
-                {
-                    "name": "extensions",
-                    "label": "Phần mở rộng cần quét",
-                    "component": "TextInput",
-                    "placeholder": "vd: php,asp,aspx"
-                },
-                {
-                    "name": "threads",
-                    "label": "Số luồng (threads)",
-                    "component": "NumberInput",
-                    "defaultValue": 10
-                }
+                {"name": "extensions", "label": "Phần mở rộng cần quét", "component": "Combobox", "placeholder": "vd: php,asp,aspx",
+                 "data": ["php", "html", "js", "aspx", "jsp", "txt", "bak", "config", "env"]},
+                {"name": "threads", "label": "Số luồng (threads)", "component": "NumberInput", "defaultValue": 10},
+                {"name": "recursive", "label": "Quét đệ quy", "component": "Switch", "defaultValue": False}
             ]
+        },
+        {
+            "id": "nuclei-scan",
+            "name": "Quét Lỗ hổng (Nuclei)",
+            "fields": [
+                {"name": "severity", "label": "Mức độ nghiêm trọng", "component": "MultiSelect", "defaultValue": ["high", "critical"], "data": ["info", "low", "medium", "high", "critical"]},
+                {"name": "templates", "label": "Chạy các mẫu cụ thể", "component": "MultiSelect", "placeholder": "Để trống để chạy các mẫu đề xuất", "data": ["cves", "default-logins", "exposed-panels", "vulnerabilities"]}
+            ]
+        },
+        {
+            "id": "wpscan-scan",
+            "name": "Quét WordPress (WPScan)",
+            "fields": [
+                {"name": "enumerate", "label": "Phát hiện các thành phần", "component": "MultiSelect", "defaultValue": ["p", "t"], "data": [
+                    {"value": "p", "label": "Plugins (p)"},
+                    {"value": "t", "label": "Themes (t)"},
+                    {"value": "u", "label": "Users (u)"}
+                ]}
+            ]
+        },
+        {
+            "id": "dns-lookup",
+            "name": "Phân giải DNS",
+            "fields": []
         }
-    }
-
-    # Only return tools that are actually loaded in TOOLS
-    frontend_tools = []
-    for t in TOOLS:
-        tid = t.get("name")
-        if tid in tool_form_map:
-            frontend_tools.append(tool_form_map[tid])
-        else:
-            # Fallback: minimal info
-            frontend_tools.append({
-                "id": tid,
-                "name": t.get("name", tid),
-                "description": t.get("description", ""),
-                "fields": []
-            })
-
+    ]
     return {"tools": frontend_tools}
 
 @app.post("/api/scan_results", status_code=status.HTTP_204_NO_CONTENT)
@@ -645,19 +580,31 @@ def create_workflow_scan(
     sub_jobs = []
     failed_jobs = []
     step_counter = 0
-    
+
+    def map_ports_param(tool_id, params):
+        # Map 'ports': 'top-1000' to 'ports': '1000' for port-scan
+        if tool_id == "port-scan" and isinstance(params, dict):
+            ports_val = params.get("ports")
+            if isinstance(ports_val, str) and ports_val.strip().lower() == "top-1000":
+                params = params.copy()
+                params["ports"] = "1000"
+        return params
+
     if req.strategy == "wide":
         # Wide Strategy: 1 job per tool, each job handles all targets
         for i, step in enumerate(req.steps):
             try:
                 step_counter += 1
                 job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
-                
+
+                # Map ports param for port-scan
+                step_params = map_ports_param(step.tool_id, step.params)
+
                 sub_job = models.ScanJob(
                     job_id=job_id,
                     tool=step.tool_id,
                     targets=req.targets,  # All targets for this tool
-                    options=step.params,
+                    options=step_params,
                     workflow_id=workflow_id,
                     step_order=step_counter,
                     vpn_profile=req.vpn_profile,
@@ -666,13 +613,13 @@ def create_workflow_scan(
                 )
                 db.add(sub_job)
                 sub_jobs.append(sub_job)
-                
+
                 logger.info(f"Created WIDE job {job_id} for tool {step.tool_id} with {len(req.targets)} targets")
-                
+
             except Exception as e:
                 logger.error(f"Failed to create wide sub-job for step {i+1}: {e}")
                 failed_jobs.append({"step": i+1, "tool": step.tool_id, "error": str(e)})
-    
+
     else:  # Deep Strategy
         # Deep Strategy: 1 job per (target + tool) combination
         for target_idx, target in enumerate(req.targets):
@@ -680,12 +627,15 @@ def create_workflow_scan(
                 try:
                     step_counter += 1
                     job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
-                    
+
+                    # Map ports param for port-scan
+                    step_params = map_ports_param(step.tool_id, step.params)
+
                     sub_job = models.ScanJob(
                         job_id=job_id,
                         tool=step.tool_id,
                         targets=[target],  # Single target for this job
-                        options=step.params,
+                        options=step_params,
                         workflow_id=workflow_id,
                         step_order=step_counter,
                         vpn_profile=req.vpn_profile,
@@ -694,9 +644,9 @@ def create_workflow_scan(
                     )
                     db.add(sub_job)
                     sub_jobs.append(sub_job)
-                    
+
                     logger.info(f"Created DEEP job {job_id} for tool {step.tool_id} with target {target}")
-                    
+
                 except Exception as e:
                     logger.error(f"Failed to create deep sub-job for target {target}, tool {step.tool_id}: {e}")
                     failed_jobs.append({
@@ -704,7 +654,7 @@ def create_workflow_scan(
                         "tool": step.tool_id, 
                         "error": str(e)
                     })
-    
+
     db.commit()
     
     # 4. Submit all jobs to scanner nodes (parallel execution)

@@ -40,8 +40,8 @@ def init_vpn_profiles_if_empty(db, vpn_data=VPN_PROFILES_BOOTSTRAP):
                 vpn = VpnProfile(
                     filename=p["filename"],
                     hostname=p["hostname"],
-                    ip=p.get("ip"),
-                    country=p.get("country"),
+                    ip=p["ip"],
+                    country=p["country"],
                     status="idle",
                     in_use_by=[]
                 )

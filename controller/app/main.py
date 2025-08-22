@@ -757,6 +757,16 @@ def get_workflows(
     db.commit()
 
     # Chuẩn hóa trả về đúng format dashboard (pagination + results)
+    # Convert SQLAlchemy objects to dicts (using Pydantic schema if available)
+    from app import schemas
+    def serialize_workflow(wf):
+        # Use Pydantic schema if possible, else fallback to __dict__
+        try:
+            return schemas.WorkflowJob.from_orm(wf).dict()
+        except Exception:
+            # Fallback: remove private attributes
+            return {k: v for k, v in wf.__dict__.items() if not k.startswith('_')}
+
     return {
         "pagination": {
             "total_items": total,
@@ -766,7 +776,7 @@ def get_workflows(
             "has_next": (page * page_size) < total,
             "has_previous": page > 1
         },
-        "results": workflows
+        "results": [serialize_workflow(wf) for wf in workflows]
     }
 
 @app.get("/api/workflows/{workflow_id}")

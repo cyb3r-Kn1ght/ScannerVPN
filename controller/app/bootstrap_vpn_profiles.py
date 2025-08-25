@@ -58,6 +58,9 @@ for country, profiles in VPN_PROFILES_BOOTSTRAP.items():
                 obj.country = p["country"]
                 changed = True
             if changed:
+                print(f"Updated: {p['filename']}")
                 update_count += 1
+        else:
+            print(f"Not found in DB: {p['filename']}")
 session.commit()
 print(f"Đã cập nhật ip/country cho {update_count} VPN profile.")

@@ -1306,7 +1306,12 @@ def delete_scanner_job_only(job_id: str, db: Session = Depends(get_db)):
     scanner_node_url = os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
     try:
         resp = httpx.delete(f"{scanner_node_url}/api/scanner_jobs/{scanner_job}", timeout=10)
-        resp_json = resp.json() if resp.status_code == 200 else {"error": resp.text}
+        if resp.status_code == 404:
+            resp_json = {"status": "not found"}
+        elif resp.status_code == 200:
+            resp_json = resp.json()
+        else:
+            resp_json = {"error": resp.text}
     except Exception as e:
         resp_json = {"error": str(e)}
     logger.info(f"Called scanner node to delete {scanner_job} for job {job_id}")
@@ -1330,7 +1335,12 @@ def delete_workflow_and_related(workflow_id: str, db: Session = Depends(get_db))
         if scanner_job:
             try:
                 resp = httpx.delete(f"{scanner_node_url}/api/scanner_jobs/{scanner_job}", timeout=10)
-                resp_json = resp.json() if resp.status_code == 200 else {"error": resp.text}
+                if resp.status_code == 404:
+                    resp_json = {"status": "not found"}
+                elif resp.status_code == 200:
+                    resp_json = resp.json()
+                else:
+                    resp_json = {"error": resp.text}
             except Exception as e:
                 resp_json = {"error": str(e)}
             deleted_jobs.append({"job_id": job.job_id, "scanner_job": scanner_job, "scanner_node_response": resp_json})

@@ -8,9 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy code ứng dụng từ app directory
 COPY app/ ./app/
 
-# Copy port list files for portscan splitting logic (from app/ to app/ in image)
-COPY app/nmap-ports-top1000.txt app/Ports-1-To-65535.txt ./app/
-
 # Tạo thư mục /data để chứa SQLite file
 RUN mkdir /data && chmod a+rwx /data
 

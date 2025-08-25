@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Extra
 from typing import List, Dict, Any, Optional
 import os
@@ -160,3 +160,21 @@ def _create_job(req: ScanRequest):
         print(f"[ERROR] Job spec: {job}")
         print(f"[ERROR] Env vars: {env_vars}")
         raise HTTPException(status_code=500, detail=f"Failed to create job: {e}")
+
+# Xoá scanner job/pod theo job_id
+
+@app.delete("/api/scanner_jobs/{job_id}")
+def delete_scanner_job(job_id: str):
+    try:
+        # Xoá Job K8s (cả pod sẽ bị xoá theo)
+        delete_opts = client.V1DeleteOptions(propagation_policy="Foreground")
+        resp = batch_v1.delete_namespaced_job(
+            name=job_id,
+            namespace=NAMESPACE,
+            body=delete_opts
+        )
+        print(f"[INFO] Deleted K8s job {job_id}: {resp}")
+        return {"status": "deleted", "job_id": job_id}
+    except client.rest.ApiException as e:
+        print(f"[ERROR] Failed to delete job {job_id}: {e}")
+        return {"status": "error", "job_id": job_id, "error": str(e)}

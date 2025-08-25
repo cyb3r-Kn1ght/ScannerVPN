@@ -159,7 +159,7 @@ def list_tools():
             "description": "Kiểm tra thông tin HTTP, tiêu đề, trạng thái, SSL, v.v.",
             "fields": [
                 {"name": "follow_redirects", "label": "Theo dõi chuyển hướng", "component": "Switch", "defaultValue": True},
-                {"name": "status_codes", "label": "Lọc theo mã trạng thái", "component": "Combobox", "placeholder": "vd: 200,301,404",
+                {"name": "status_codes", "label": "Lọc theo mã trạng thái", "component": "TagsInput", "placeholder": "vd: 200,301,404",
                  "data": ["200,204", "301,302,307", "400,401,403", "500,502,503"]}
             ]
         },
@@ -168,7 +168,7 @@ def list_tools():
             "name": "Quét thư mục (Dirsearch)",
             "description": "Tìm kiếm các thư mục và file ẩn trên web server.",
             "fields": [
-                {"name": "extensions", "label": "Phần mở rộng cần quét", "component": "Combobox", "placeholder": "vd: php,asp,aspx",
+                {"name": "extensions", "label": "Phần mở rộng cần quét", "component": "TagsInput", "placeholder": "vd: php,asp,aspx",
                  "data": ["php", "html", "js", "aspx", "jsp", "txt", "bak", "config", "env"]},
                 {"name": "threads", "label": "Số luồng (threads)", "component": "NumberInput", "defaultValue": 10},
                 {"name": "recursive", "label": "Quét đệ quy", "component": "Switch", "defaultValue": False}

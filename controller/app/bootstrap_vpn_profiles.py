@@ -56,18 +56,10 @@ for country, profiles in VPN_PROFILES_BOOTSTRAP.items():
     for p in profiles:
         obj = session.query(VpnProfile).filter_by(filename=p["filename"]).first()
         if obj:
-            changed = False
-            if obj.ip != p["ip"]:
-                obj.ip = p["ip"]
-                changed = True
-            if obj.country != p["country"]:
-                obj.country = p["country"]
-                changed = True
-            if changed:
-                print(f"Updated: {p['filename']}")
-                update_count += 1
-            else:
-                print(f"Found but no change: {p['filename']}")
+            obj.ip = p["ip"]
+            obj.country = p["country"]
+            print(f"Force update: {p['filename']}")
+            update_count += 1
         else:
             print(f"Not found in DB: {p['filename']}")
 session.commit()

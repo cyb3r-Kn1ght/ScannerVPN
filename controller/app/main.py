@@ -81,13 +81,12 @@ def get_sub_job_results_endpoint(
     if not job:
         raise HTTPException(status_code=404, detail="Scan job not found")
 
-    # Nếu là port-scan và thuộc workflow, thực hiện merge kết quả các sub-job cùng nhóm
+    # Nếu là port-scan và thuộc workflow, thực hiện merge kết quả các sub-job cùng nhóm (bỏ điều kiện step_order)
     if job.tool == "port-scan" and job.workflow_id:
-        # Lấy tất cả sub-job cùng workflow, cùng target, cùng tool, cùng step_order
+        # Lấy tất cả sub-job cùng workflow, cùng target, cùng tool
         sub_jobs = db.query(models.ScanJob).filter(
             models.ScanJob.workflow_id == job.workflow_id,
             models.ScanJob.tool == "port-scan",
-            models.ScanJob.step_order == job.step_order,
             models.ScanJob.targets == job.targets
         ).all()
         job_ids = [j.job_id for j in sub_jobs]
@@ -1273,3 +1272,72 @@ def create_portscan_subjobs(request_data):
                     continue
                 # TODO: create_subjob(target, chunk, ...)
                 pass
+# Xoá scanner (sub-job) cả phía controller và scanner node chỉ với job_id
+@app.delete("/api/scan_jobs/{job_id}")
+def delete_scan_job_full(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(models.ScanJob).filter(models.ScanJob.job_id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+    scanner_job = getattr(job, "scanner_job_name", None)
+    if not scanner_job:
+        raise HTTPException(status_code=404, detail="No scanner_job_name found for this job")
+    # Gọi sang scanner node API để xoá job/pod
+    scanner_node_url = os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
+    try:
+        resp = httpx.delete(f"{scanner_node_url}/api/scanner_jobs/{scanner_job}", timeout=10)
+        resp_json = resp.json() if resp.status_code == 200 else {"error": resp.text}
+    except Exception as e:
+        resp_json = {"error": str(e)}
+    # Xoá bản ghi trong DB
+    db.delete(job)
+    db.commit()
+    logger.info(f"Deleted scan job {job_id} and called scanner node to delete {scanner_job}")
+    return {"status": "deleted", "job_id": job_id, "scanner_job": scanner_job, "scanner_node_response": resp_json}
+
+# Xoá pod/job scanner node theo job_id (không xóa DB)
+@app.delete("/api/scan_jobs/{job_id}/scanner_job")
+def delete_scanner_job_only(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(models.ScanJob).filter(models.ScanJob.job_id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+    scanner_job = getattr(job, "scanner_job_name", None)
+    if not scanner_job:
+        raise HTTPException(status_code=404, detail="No scanner_job_name found for this job")
+    scanner_node_url = os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
+    try:
+        resp = httpx.delete(f"{scanner_node_url}/api/scanner_jobs/{scanner_job}", timeout=10)
+        resp_json = resp.json() if resp.status_code == 200 else {"error": resp.text}
+    except Exception as e:
+        resp_json = {"error": str(e)}
+    logger.info(f"Called scanner node to delete {scanner_job} for job {job_id}")
+    return {"status": "scanner_job_deleted", "job_id": job_id, "scanner_job": scanner_job, "scanner_node_response": resp_json}
+
+# Xoá workflow và toàn bộ dữ liệu liên quan (sub-jobs, scan_results, pod/job)
+@app.delete("/api/workflows/{workflow_id}")
+def delete_workflow_and_related(workflow_id: str, db: Session = Depends(get_db)):
+    from app import models
+    workflow = db.query(models.WorkflowJob).filter(models.WorkflowJob.workflow_id == workflow_id).first()
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    # Lấy toàn bộ sub-jobs
+    sub_jobs = db.query(models.ScanJob).filter(models.ScanJob.workflow_id == workflow_id).all()
+    deleted_jobs = []
+    errors = []
+    scanner_node_url = os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
+    for job in sub_jobs:
+        scanner_job = getattr(job, "scanner_job_name", None)
+        # Gọi xóa pod/job scanner node nếu có
+        if scanner_job:
+            try:
+                resp = httpx.delete(f"{scanner_node_url}/api/scanner_jobs/{scanner_job}", timeout=10)
+                resp_json = resp.json() if resp.status_code == 200 else {"error": resp.text}
+            except Exception as e:
+                resp_json = {"error": str(e)}
+            deleted_jobs.append({"job_id": job.job_id, "scanner_job": scanner_job, "scanner_node_response": resp_json})
+        # Xóa scan_results liên quan
+        db.query(models.ScanResult).filter(models.ScanResult.workflow_id == workflow_id, models.ScanResult.scan_metadata.op('->>')('job_id') == job.job_id).delete()
+        db.delete(job)
+    db.delete(workflow)
+    db.commit()
+    logger.info(f"Deleted workflow {workflow_id} and all related jobs/results")
+    return {"status": "workflow_deleted", "workflow_id": workflow_id, "deleted_jobs": deleted_jobs, "errors": errors}

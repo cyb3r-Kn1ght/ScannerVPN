@@ -1,292 +1,183 @@
-# Distributed Scanner System - Kubernetes
+# Distributed Scanner System (Kubernetes)
 
-🚀 **Hệ thống quét phân tán chạy trên Kubernetes**
+## 📝 Tổng quan hệ thống
 
-## 🏗️ Architecture
+Hệ thống quét bảo mật phân tán, điều phối qua Controller (FastAPI), thực thi scan qua các Scanner Node API (Python FastAPI, chạy trong Kubernetes), sử dụng các Job/Pod động để thực hiện các tác vụ như port scan, httpx, nuclei, wpscan, dns lookup... Kết quả lưu về database (SQLite).
+
+### Kiến trúc tổng thể
 
 ```
 Dashboard/User
-    ↓ (HTTP requests)
-Controller (FastAPI)
-    ↓ (API calls)
-Scanner Node API (K8s Deployment)
-    ↓ (creates)
-Kubernetes Jobs/Pods
-    ↓ (scan results)
-Controller Database
+		↓ (HTTP API)
+Controller (FastAPI, DB)
+		↓ (API call)
+Scanner Node API (FastAPI, K8s)
+		↓ (Tạo K8s Job/Pod)
+Kubernetes Cluster
+		↓ (Kết quả scan)
+Controller DB
 ```
 
-## 📦 Components
+- **Controller**: Điều phối workflow, quản lý DB, cung cấp REST API cho dashboard.
+- **Scanner Node API**: Nhận lệnh từ controller, tạo/xóa các K8s Job/Pod để thực thi scan.
+- **Scanner Jobs**: Pod động, mỗi job thực hiện 1 tác vụ scan, trả kết quả về controller.
 
-### 1. **Controller**
-- REST API nhận yêu cầu quét từ Dashboard
-- Lưu trữ kết quả quét trong SQLite database
-- Điều phối jobs đến Scanner Node API
+---
 
-### 2. **Scanner Node API** 
-- API server chạy trong K8s
-- Nhận job requests từ Controller
-- Tạo Kubernetes Jobs để thực hiện quét
-- Quản lý lifecycle của scan jobs
+## 🚦 Quy trình hoạt động
 
-### 3. **Scanner Jobs**
-- Kubernetes Jobs được tạo dynamically
-- Mỗi job chạy trong Pod riêng biệt
-- Thực hiện DNS lookup, port scan, HTTP fingerprinting
-- Gửi kết quả về Controller
+1. Dashboard gửi yêu cầu scan (qua API Controller)
+2. Controller tạo workflow, chia nhỏ thành các scan job (sub-job)
+3. Controller gọi Scanner Node API để tạo các K8s Job/Pod tương ứng
+4. Scanner Node API tạo K8s Job, Pod thực thi scan tool (portscan, httpx, nuclei...)
+5. Pod scan xong gửi kết quả về Controller (API)
+6. Controller lưu kết quả vào DB, cập nhật trạng thái workflow
+7. Khi cần, Controller/Scanner Node có thể xóa pod/job, workflow, kết quả liên quan
 
-## 🚀 Quick Start
+---
 
-### Prerequisites & Kubernetes Setup
+## ⚙️ Build & Deploy
 
-#### Option 1: Minikube (Local Development)
+### 1. Build Docker images
+
 ```bash
-# Install Minikube
-curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-sudo install minikube-linux-amd64 /usr/local/bin/minikube
-
-# Start Minikube cluster (adjust memory based on your system)
-# For systems with 4GB+ RAM:
-minikube start --driver=docker --memory=2200 --cpus=2
-
-# For systems with 8GB+ RAM:
-# minikube start --driver=docker --memory=4096 --cpus=2
-
-# Verify cluster
-kubectl cluster-info
-kubectl get nodes
-```
-
-#### Option 2: Kind (Kubernetes in Docker)
-```bash
-# Install Kind
-curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-chmod +x ./kind
-sudo mv ./kind /usr/local/bin/kind
-
-# Create cluster
-kind create cluster --name scanner-cluster
-
-# Set context
-kubectl cluster-info --context kind-scanner-cluster
-```
-
-#### Option 3: Remote Kubernetes Cluster
-```bash
-# Use existing kubeconfig
-export KUBECONFIG=/path/to/your/kubeconfig
-
-# Or copy to default location
-mkdir -p ~/.kube
-cp /path/to/kubeconfig ~/.kube/config
-
-# Test connection
-kubectl cluster-info
-```
-
-#### Check Prerequisites
-```bash
-# Kubernetes cluster access
-kubectl cluster-info
-
-# Docker for building images  
-docker --version
-
-# Make for task automation
-make --version
-```
-
-### 1. Setup Kubernetes Cluster
-```bash
-# If using Minikube (adjust memory based on your system)
-minikube start --driver=docker --memory=2200 --cpus=2
-
-# If using Kind  
-kind create cluster --name scanner-cluster
-
-# Verify cluster is ready
-kubectl get nodes
-```
-
-### 2. Setup Environment
-```bash
-make dev-setup
-```
-
-### 3. Build Images
-```bash
+cd controller
+make build
+cd ../scanner-node-api
 make build
 ```
 
-### 4. Deploy to Kubernetes
+Hoặc build thủ công:
 ```bash
-make deploy
+docker build -t controller:latest ./controller
+# Lặp lại cho từng thư mục scan-node-tools/* nếu muốn build riêng từng tool
 ```
 
-### 5. Test System
-```bash
-make test
-```
+### 2. Deploy lên Kubernetes
 
-### 6. Monitor
-```bash
-make monitor
-```
-
-## 📊 Commands
-
-| Command | Description |
-|---------|-------------|
-| `make deploy` | Deploy to Kubernetes |
-| `make test` | Run complete test suite |
-| `make monitor` | Monitor K8s resources |
-| `make logs` | View service logs |
-| `make health` | Check services health |
-| `make clean` | Clean up resources |
-| `make clean-all` | Remove everything |
-
-## 🔧 Manual Commands
-
-### Deploy step-by-step:
 ```bash
 kubectl apply -f manifests/namespace.yaml
-kubectl apply -f manifests/scanner-node-rbac.yaml  
 kubectl apply -f manifests/controller-deployment.yaml
 kubectl apply -f manifests/controller-service.yaml
 kubectl apply -f manifests/scanner-node-api-deployment.yaml
+kubectl apply -f manifests/scanner-node-api-service.yaml
+kubectl apply -f manifests/controller-rbac.yaml
+kubectl apply -f manifests/controller-pv.yaml
+kubectl apply -f manifests/scanner-node-rbac.yaml
+# Có thể apply thêm các job mẫu trong manifests/jobs/*
 ```
 
-### Check deployment:
+### 3. Port-forward để test API
+
 ```bash
-kubectl get pods -n scan-system
-kubectl get services -n scan-system  
-kubectl get jobs -n scan-system
-```
-
-### Test API:
-```bash
-# Port forward services
-kubectl port-forward -n scan-system svc/controller 8000:80 &
-kubectl port-forward -n scan-system svc/scanner-node-api 8080:8080 &
-
-# Send scan request
-curl -X POST http://localhost:8000/api/scan/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "targets": ["example.com", "8.8.8.8"],
-    "scanner_node_url": "http://localhost:8080",
-    "scan_types": ["dns", "port", "http"]
-  }'
-```
-
-## 📋 API Endpoints
-
-### Controller API (Port 8000)
-- `POST /api/scan/start` - Start new scan job
-- `GET /api/scan_results` - Get scan results
-- `POST /api/scan_results` - Receive results (from scanner)
-
-### Scanner Node API (Port 8080)  
-- `POST /api/scan/execute` - Execute scan job (creates K8s Job)
-- `GET /api/jobs/status/{job_id}` - Get job status
-- `GET /api/jobs/{job_id}/logs` - Get job logs
-- `DELETE /api/jobs/{job_id}` - Cleanup job
-- `GET /api/health` - Health check
-
-## 🔍 How It Works
-
-1. **Job Request**: Dashboard sends scan request to Controller
-2. **Job Dispatch**: Controller calls Scanner Node API 
-3. **K8s Job Creation**: Scanner Node API creates Kubernetes Job
-4. **Pod Execution**: Job spawns Pod with scanner image
-5. **Scanning**: Pod performs DNS, port, HTTP scans
-6. **Results**: Pod sends results back to Controller
-7. **Storage**: Controller stores results in database
-8. **Cleanup**: Job and Pod auto-cleanup after completion
-
-## 🛠️ Development
-
-### Local testing:
-```bash
-# Build images
-make build
-
-# Deploy to local K8s (minikube/kind)
-make deploy
-
-# Run tests
-make test
-
-# View logs
-make logs
-
-# Monitor resources
-make monitor
-```
-
-### Debugging:
-```bash
-# Check pod logs
-kubectl logs -n scan-system -l app=scanner-job
-
-# Describe resources
-kubectl describe deployment controller -n scan-system
-kubectl describe deployment scanner-node-api -n scan-system
-
-# Port forward for direct access
 kubectl port-forward -n scan-system svc/controller 8000:80
 kubectl port-forward -n scan-system svc/scanner-node-api 8080:8080
 ```
 
-## 🔧 Configuration
+---
 
-### Environment Variables:
-- `KUBERNETES_NAMESPACE`: Target namespace (default: scan-system)
-- `CONTROLLER_API`: Controller API endpoint
-- `DATABASE_URL`: Database connection string
+## 🚀 Sử dụng API
 
-### Scanner Job Configuration:
-- CPU: 250m request, 500m limit
-- Memory: 512Mi request, 1Gi limit  
-- TTL: 3600s (1 hour after completion)
-- Restart Policy: Never
-
-## 🚨 Security
-
-- ServiceAccount with minimal RBAC permissions
-- Network policies for inter-service communication
-- Resource limits to prevent resource exhaustion
-- Automatic cleanup of completed jobs
-
-## 🔄 Scaling
-
-- Controller: Single replica (can be scaled)
-- Scanner Node API: 2 replicas (can be scaled horizontally)
-- Scanner Jobs: Dynamic based on requests
-- Database: SQLite (can be replaced with PostgreSQL/MySQL)
-
-## 📊 Monitoring
-
-### Built-in monitoring:
+### Khởi tạo workflow scan
 ```bash
-# Resource usage
-kubectl top pods -n scan-system
-
-# Job status
-kubectl get jobs -n scan-system
-
-# Service health
-make health
+curl -X POST http://localhost:8000/api/scan/workflow \
+	-H "Content-Type: application/json" \
+	-d '{
+		"targets": ["scanme.nmap.org"],
+		"scan_types": ["port-scan", "httpx", "nuclei"],
+		"strategy": "wide"
+	}'
 ```
 
-### Logs:
+### Xem trạng thái workflow
 ```bash
-# Real-time logs
-make follow-logs
-
-# Service logs
-make logs
-
-# Job logs  
-kubectl logs -n scan-system job/scanner-job-<job-id>
+curl http://localhost:8000/api/workflows/<workflow_id>
 ```
+
+### Xem kết quả scan
+```bash
+curl http://localhost:8000/api/scan_results?workflow_id=<workflow_id>
+```
+
+### Xóa job, workflow, pod/job scanner
+
+- Xóa 1 scan job (DB + pod/job):
+	```bash
+	curl -X DELETE http://localhost:8000/api/scan_jobs/<job_id>/full_delete
+	```
+- Chỉ xóa pod/job scanner (không xóa DB):
+	```bash
+	curl -X DELETE http://localhost:8000/api/scan_jobs/<job_id>/scanner_job
+	```
+- Xóa toàn bộ workflow (toàn bộ sub-job, kết quả, pod/job liên quan):
+	```bash
+	curl -X DELETE http://localhost:8000/api/workflows/<workflow_id>
+	```
+- Xóa toàn bộ database (chỉ dùng cho dev/test):
+	```bash
+	curl -X DELETE http://localhost:8000/api/database/clear
+	```
+
+> Khi xóa pod/job đã bị xóa trước đó, API trả về `{ "status": "not found" }` thay vì lỗi dài dòng.
+
+---
+
+## 🛠️ Phát triển & debug
+
+- Xem log controller:
+	```bash
+	kubectl logs -n scan-system -l app=controller
+	```
+- Xem log scanner node:
+	```bash
+	kubectl logs -n scan-system -l app=scanner-node-api
+	```
+- Xem log pod scan:
+	```bash
+	kubectl logs -n scan-system -l job-name=<job_name>
+	```
+- Xem trạng thái resource:
+	```bash
+	kubectl get pods -n scan-system
+	kubectl get jobs -n scan-system
+	kubectl get svc -n scan-system
+	```
+
+---
+
+## 🔒 Bảo mật & mở rộng
+
+- RBAC tối thiểu cho từng service
+- Tách namespace riêng (scan-system)
+- Có thể scale scanner-node-api, controller
+- Có thể thay SQLite bằng PostgreSQL/MySQL nếu cần
+
+---
+
+## 📚 Tham khảo endpoint chính
+
+- `POST /api/scan/workflow` — Tạo workflow scan mới
+- `GET /api/workflows/{workflow_id}` — Xem trạng thái workflow
+- `GET /api/scan_results` — Lấy kết quả scan
+- `DELETE /api/scan_jobs/{job_id}/full_delete` — Xóa job (DB + pod/job)
+- `DELETE /api/scan_jobs/{job_id}/scanner_job` — Chỉ xóa pod/job scanner
+- `DELETE /api/workflows/{workflow_id}` — Xóa toàn bộ workflow, sub-job, pod/job
+- `DELETE /api/database/clear` — Xóa toàn bộ database (dev/test)
+
+---
+
+## 📦 Thư mục chính
+
+- `controller/` — FastAPI controller, DB, API chính
+- `scanner-node-api/` — FastAPI scanner node, quản lý K8s job/pod
+- `scan-node-tools/` — Các tool scan (port-scan, httpx, nuclei, wpscan, dns-lookup...)
+- `manifests/` — K8s manifests
+
+---
+
+## 📝 Ghi chú
+
+- Đảm bảo đã build image trước khi deploy lên K8s
+- Có thể mở rộng thêm tool scan mới bằng cách thêm vào `scan-node-tools/` và cập nhật scanner-node-api
+- Khi xóa job/workflow, hệ thống sẽ tự động dọn dẹp pod/job và dữ liệu liên quan
+- Nếu cần hướng dẫn chi tiết hơn, xem code hoặc liên hệ maintainer

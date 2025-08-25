@@ -7,7 +7,7 @@ import os
 import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.models import Base, VpnProfile
+from models import Base, VpnProfile
 
 # Đường dẫn DB đúng với môi trường container controller
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////data/scan_results.db")

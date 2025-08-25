@@ -46,6 +46,12 @@ VPN_PROFILES_BOOTSTRAP = {
 }
 
 update_count = 0
+# In ra danh sách filename trong DB để debug
+all_db_profiles = session.query(VpnProfile).all()
+print("VPN profiles trong DB:")
+for dbp in all_db_profiles:
+    print(f"- {dbp.filename}")
+
 for country, profiles in VPN_PROFILES_BOOTSTRAP.items():
     for p in profiles:
         obj = session.query(VpnProfile).filter_by(filename=p["filename"]).first()
@@ -60,6 +66,8 @@ for country, profiles in VPN_PROFILES_BOOTSTRAP.items():
             if changed:
                 print(f"Updated: {p['filename']}")
                 update_count += 1
+            else:
+                print(f"Found but no change: {p['filename']}")
         else:
             print(f"Not found in DB: {p['filename']}")
 session.commit()

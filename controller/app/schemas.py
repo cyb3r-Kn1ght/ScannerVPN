@@ -9,7 +9,8 @@ class VpnProfileBase(BaseModel):
     hostname: Optional[str] = None
     status: str = "idle"  # idle, connected, disconnected
     in_use_by: List[str] = []  # Danh sách job_id đang sử dụng VPN này
-
+    ip: Optional[str] = None
+    country: Optional[str] = None
 class VpnProfileCreate(VpnProfileBase):
     pass
 

@@ -1,4 +1,6 @@
-# app/api/endpoints/scan_jobs.py
+import os
+import logging
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
@@ -8,6 +10,10 @@ from app.services.scan_job_service import ScanJobService
 from app.api.deps import get_db, get_scan_job_service
 
 router = APIRouter()
+# Xoá pod/job scanner node theo job_id (không xóa DB)
+@router.delete("/api/scan_jobs/{job_id}/scanner_job", summary="Xoá scanner job trên scanner node theo job_id")
+def delete_scanner_job_only(job_id: str, scan_job_service: ScanJobService = Depends(get_scan_job_service)):
+    return scan_job_service.delete_scanner_job_only(job_id=job_id)
 
 # Giữ nguyên các endpoint gốc cho từng tool
 @router.post("/api/scan/{tool_name}", status_code=201, summary="Tạo job quét đơn lẻ cho một tool cụ thể")

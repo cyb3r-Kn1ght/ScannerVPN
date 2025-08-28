@@ -1,5 +1,7 @@
 # app/services/result_service.py
 import json
+import logging
+logging.basicConfig(level=logging.INFO)
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.crud import crud_scan_result, crud_scan_job, crud_workflow, crud_vpn_profile
@@ -11,42 +13,34 @@ class ResultService:
         self.db = db
 
     def process_incoming_result(self, result_in: scan_result_schema.ScanResultCreate):
-        """Xử lý kết quả do scanner node gửi về."""
-        # 1. Lưu kết quả vào DB
-        db_result = crud_scan_result.create(db=self.db, result_in=result_in)
+        """Xử lý kết quả do scanner node gửi về, giữ nguyên logic cũ (merge các trường đặc biệt vào scan_metadata, lưu DB, cập nhật job/workflow)."""
+        scan_metadata = dict(result_in.scan_metadata) if result_in.scan_metadata else {}
+        for k in ["httpx_results", "http_endpoints", "http_metadata"]:
+            v = getattr(result_in, k, None)
+            if v is not None:
+                scan_metadata[k] = v
 
-        # 2. Cập nhật trạng thái job thành 'completed'
-        job_id = db_result.scan_metadata.get('job_id')
-        if not job_id:
-            return
+        db_obj = ScanResult(
+            target=result_in.target,
+            resolved_ips=result_in.resolved_ips,
+            open_ports=result_in.open_ports,
+            scan_metadata=scan_metadata,
+            workflow_id=result_in.workflow_id
+        )
+        self.db.add(db_obj)
 
-        job_db = crud_scan_job.get(db=self.db, job_id=job_id)
-        if not job_db:
-            return
+        job_id = scan_metadata.get('job_id')
+        if job_id:
+            from app.models.scan_job import ScanJob
+            job = self.db.query(ScanJob).filter(ScanJob.job_id == job_id).first()
+            if job:
+                job.status = "completed"
+                if job.workflow_id:
+                    crud_workflow.update_workflow_progress(self.db, job.workflow_id, logger=logging.getLogger(__name__))
 
-        crud_scan_job.update(self.db, db_obj=job_db, obj_in={"status": "completed"})
+        self.db.commit()
 
-        # 3. Cập nhật tiến trình của workflow (nếu có)
-        if job_db.workflow_id:
-            self._update_workflow_progress(job_db.workflow_id)
-
-    def _update_workflow_progress(self, workflow_id: str):
-        """Cập nhật trạng thái và tiến trình của workflow."""
-        workflow_db = crud_workflow.get_workflow_by_id(self.db, workflow_id=workflow_id)
-        if not workflow_db:
-            return
-
-        sub_jobs = crud_scan_job.get_by_workflow(self.db, workflow_id=workflow_id)
-        completed = sum(1 for job in sub_jobs if job.status == "completed")
-        failed = sum(1 for job in sub_jobs if job.status == "failed")
-
-        update_data = {"completed_steps": completed, "failed_steps": failed}
-
-        if (completed + failed) >= workflow_db.total_steps:
-            status = "completed" if failed == 0 else "partially_failed"
-            update_data["status"] = status
-
-        crud_workflow.update(self.db, db_obj=workflow_db, obj_in=update_data)
+    # Đã chuyển logic update workflow progress sang crud_workflow.update_workflow_progress
 
     def get_paginated_results(self, page: int, page_size: int, workflow_id: str | None = None, job_id: str | None = None):
         """Lấy danh sách kết quả có phân trang."""

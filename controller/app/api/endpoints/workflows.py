@@ -13,7 +13,7 @@ router = APIRouter()
 @router.post("/api/scan/workflow", status_code=201, summary="Tạo và bắt đầu một workflow quét mới")
 async def create_workflow(
         *,
-    workflow_in: workflow.WorkflowRequest,
+        workflow_in: workflow.WorkflowRequest,
         workflow_service: WorkflowService = Depends(get_workflow_service)
 ):
     try:
@@ -25,22 +25,19 @@ async def create_workflow(
 # Giữ nguyên endpoint gốc: GET /api/workflows/{workflow_id}
 @router.get("/api/workflows/{workflow_id}", summary="Lấy trạng thái chi tiết của một workflow")
 def get_workflow_details(
-        workflow_id: str,
-        workflow_service: WorkflowService = Depends(get_workflow_service)
+    workflow_id: str,
+    workflow_service: WorkflowService = Depends(get_workflow_service)
 ):
-    return workflow_service.get_status(workflow_id=workflow_id)
+    return workflow_service.get_workflow_detail(workflow_id=workflow_id)
 
 # Giữ nguyên endpoint gốc: GET /api/workflows
 @router.get("/api/workflows", summary="Lấy danh sách các workflow")
 def get_workflows_list(
-        page: int = Query(1, ge=1),
-        page_size: int = Query(10, ge=1, le=100),
-        db: Session = Depends(get_db)
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    workflow_service: WorkflowService = Depends(get_workflow_service)
 ):
-    # Logic này đơn giản, có thể gọi trực tiếp CRUD
-    workflows = crud.crud_workflow.get_multi(db, skip=(page-1)*page_size, limit=page_size)
-    # NOTE: Phần tính toán lại progress có thể thêm vào đây nếu cần
-    return {"results": workflows}
+    return workflow_service.list_workflows(page=page, page_size=page_size)
 
 # Giữ nguyên endpoint gốc: GET /api/workflows/{workflow_id}/summary
 @router.get("/api/workflows/{workflow_id}/summary", summary="Lấy bản tóm tắt kết quả của một workflow")

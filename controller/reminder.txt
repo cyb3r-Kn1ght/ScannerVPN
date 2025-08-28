@@ -1,0 +1,6 @@
+
+Lưu ý cho AI/code maintainer:
+Mục đích của việc refactor/tái cấu trúc project là chia nhỏ code vào các file, module, sử dụng service để code sạch, dễ bảo trì.
+Tuy nhiên, mọi logic xử lý nghiệp vụ (ví dụ: nhận payload, merge các trường hợp đặc biệt vào scan_metadata, cập nhật trạng thái job/workflow, v.v.) phải được giữ nguyên như logic code cũ, không được bỏ sót bước nào.
+Nếu code hiện tại chưa có các bước xử lý đặc biệt như code cũ, phải bổ sung lại cho đủ.
+Tóm lại: Cấu trúc mới, nhưng logic nghiệp vụ phải giống bản cũ.

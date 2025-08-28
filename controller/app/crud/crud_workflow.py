@@ -1,3 +1,4 @@
+
 # app/crud/crud_workflow.py
 from sqlalchemy.orm import Session
 from typing import Dict, Any
@@ -23,6 +24,32 @@ def create_workflow(db: Session, *, workflow_in: WorkflowRequest, workflow_id: s
     db.refresh(db_obj)
     return db_obj
 
+def update_workflow_progress(db, workflow_id: str, logger=None):
+    """Update workflow completion status, logic giống code cũ."""
+    from app.models.workflow_job import WorkflowJob
+    from app.models.scan_job import ScanJob
+    workflow = db.query(WorkflowJob).filter(WorkflowJob.workflow_id == workflow_id).first()
+    if not workflow:
+        return
+
+    completed = db.query(ScanJob).filter(ScanJob.workflow_id == workflow_id, ScanJob.status == "completed").count()
+    failed = db.query(ScanJob).filter(ScanJob.workflow_id == workflow_id, ScanJob.status == "failed").count()
+
+    workflow.completed_steps = completed
+    workflow.failed_steps = failed
+
+    if completed + failed >= workflow.total_steps:
+        if failed == 0:
+            workflow.status = "completed"
+            if logger:
+                logger.info(f"Workflow {workflow_id} completed successfully")
+        else:
+            workflow.status = "partially_failed"
+            if logger:
+                logger.info(f"Workflow {workflow_id} completed with {failed} failed steps")
+
+    db.commit()
+    
 def update(db: Session, *, db_obj: WorkflowJob, obj_in: Dict[str, Any]) -> WorkflowJob:
     """Cập nhật thông tin của một workflow job."""
     for field, value in obj_in.items():

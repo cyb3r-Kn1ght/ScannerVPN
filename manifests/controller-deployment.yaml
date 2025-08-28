@@ -28,7 +28,7 @@ spec:
         - name: EXTERNAL_CONTROLLER_IP
           value: "10.102.199.42"  # Controller VM IP
         - name: VPN_PROXY_NODE
-          value: "http://10.102.199.36:8000"  # VPN proxy server URL cho assignment
+          value: "http://10.102.199.221:8000"  # VPN proxy server URL cho assignment
         ports:
         - containerPort: 8000
         volumeMounts:

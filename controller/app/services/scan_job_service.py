@@ -94,3 +94,27 @@ class ScanJobService:
         crud_scan_job.remove_and_related_results(db=self.db, db_obj=job_db)
 
         return {"status": "deleted", "job_id": job_id, "scanner_job_name": scanner_job_name, "scanner_node_response": scanner_node_response}
+    
+    def delete_scanner_job_only(self, job_id: str):
+        """Xoá pod/job scanner node theo job_id (không xóa DB)."""
+        from app.core.config import settings
+        db = self.db
+        job = self.crud.get_by_job_id(db, job_id=job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Scan job not found")
+        scanner_job = getattr(job, "scanner_job_name", None)
+        if not scanner_job:
+            raise HTTPException(status_code=404, detail="No scanner_job_name found for this job")
+        scanner_node_url = settings.SCANNER_NODE_URL
+        try:
+            resp = httpx.delete(f"{scanner_node_url}/api/scanner_jobs/{scanner_job}", timeout=10)
+            if resp.status_code == 404:
+                resp_json = {"status": "not found"}
+            elif resp.status_code == 200:
+                resp_json = resp.json()
+            else:
+                resp_json = {"error": resp.text}
+        except Exception as e:
+            resp_json = {"error": str(e)}
+        logging.getLogger(__name__).info(f"Called scanner node to delete {scanner_job} for job {job_id}")
+        return {"status": "scanner_job_deleted", "job_id": job_id, "scanner_job": scanner_job, "scanner_node_response": resp_json}

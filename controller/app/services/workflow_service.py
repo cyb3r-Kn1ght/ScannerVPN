@@ -17,6 +17,162 @@ from app.services.scan_submission_service import ScanSubmissionService
 logger = logging.getLogger(__name__)
 
 class WorkflowService:
+
+    def get_workflow_detail(self, workflow_id: str) -> dict:
+        """Lấy chi tiết workflow, sub-jobs, tổng hợp kết quả từng tool (giống code cũ)."""
+        db = self.db
+        import json
+        workflow = db.query(WorkflowJob).filter(WorkflowJob.workflow_id == workflow_id).first()
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        # Tính lại completed_steps, failed_steps, status cho workflow này
+        completed = db.query(ScanJob).filter(
+            ScanJob.workflow_id == workflow.workflow_id,
+            ScanJob.status == "completed"
+        ).count()
+        failed = db.query(ScanJob).filter(
+            ScanJob.workflow_id == workflow.workflow_id,
+            ScanJob.status == "failed"
+        ).count()
+        workflow.completed_steps = completed
+        workflow.failed_steps = failed
+        if completed + failed >= (workflow.total_steps or 0):
+            if failed == 0:
+                workflow.status = "completed"
+            else:
+                workflow.status = "partially_failed"
+        elif completed + failed == 0:
+            workflow.status = "pending"
+        else:
+            workflow.status = "running"
+        db.commit()
+
+        # Get sub-jobs
+        sub_jobs = db.query(ScanJob).filter(
+            ScanJob.workflow_id == workflow_id
+        ).order_by(ScanJob.step_order).all()
+
+        # Lấy kết quả từng sub-job (ScanResult)
+        job_ids = [job.job_id for job in sub_jobs]
+        results_by_job = {}
+        if job_ids:
+            from app.models.scan_result import ScanResult
+            scan_results = db.query(ScanResult).filter(
+                ScanResult.scan_metadata.op('->>')('job_id').in_(job_ids)
+            ).all()
+            for r in scan_results:
+                meta = r.scan_metadata or {}
+                if isinstance(meta, str):
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+                job_id = meta.get('job_id')
+                if job_id not in results_by_job:
+                    results_by_job[job_id] = []
+                # Gắn lại scan_metadata đã parse cho flatten
+                r.scan_metadata = meta
+                results_by_job[job_id].append(r)
+
+        def nuclei_flatten(find):
+            info = find.get('info', {}) or {}
+            out = {
+                "template": find.get("template"),
+                "template-id": find.get("template-id"),
+                "template-url": find.get("template-url"),
+                "name": info.get("name"),
+                "severity": info.get("severity"),
+                "tags": info.get("tags"),
+                "matched_at": find.get("matched-at"),
+                "type": find.get("type"),
+                "host": find.get("host"),
+                "ip": find.get("ip"),
+                "port": find.get("port"),
+                "timestamp": find.get("timestamp"),
+            }
+            extra = {}
+            for k, v in find.items():
+                if k not in ("template", "template-id", "template-url", "type", "host", "ip", "port", "timestamp", "matched-at", "matcher-status", "info"):
+                    extra[k] = v
+            for k, v in info.items():
+                if k not in ("name", "severity", "tags"):
+                    extra[k] = v
+            if extra:
+                out["extra_fields"] = extra
+            return out
+
+        def portscan_flatten(r):
+            return [
+                {"ip": r.target, "port": p.get("port"), "service": p.get("service"), "protocol": p.get("protocol"), "version": p.get("version", "")}
+                for p in (r.open_ports or [])
+            ]
+
+        def dns_flatten(r):
+            return {"target": r.target, "resolved_ips": r.resolved_ips}
+
+        def httpx_flatten(r):
+            meta = r.scan_metadata or {}
+            if "httpx_results" in meta:
+                return meta["httpx_results"]
+            if "http_endpoints" in meta:
+                return meta["http_endpoints"]
+            if "http_metadata" in meta and isinstance(meta["http_metadata"], dict):
+                return [meta["http_metadata"]]
+            return []
+
+        def dirsearch_flatten(r):
+            meta = r.scan_metadata or {}
+            return meta.get("dirsearch_results") or []
+
+        def wpscan_flatten(r):
+            meta = r.scan_metadata or {}
+            return meta.get("wpscan_results") or []
+
+        tool_result_map = {
+            "nuclei-scan": lambda r: [nuclei_flatten(f) for f in (r.scan_metadata.get("nuclei_results") or [])],
+            "port-scan": portscan_flatten,
+            "dns-lookup": lambda r: [dns_flatten(r)],
+            "httpx-scan": httpx_flatten,
+            "dirsearch-scan": dirsearch_flatten,
+            "wpscan-scan": wpscan_flatten,
+        }
+
+        sub_job_details = []
+        for job in sub_jobs:
+            job_id = job.job_id
+            tool = job.tool
+            job_results = results_by_job.get(job_id, [])
+            results = []
+            if tool in tool_result_map:
+                for r in job_results:
+                    results.extend(tool_result_map[tool](r))
+            else:
+                for r in job_results:
+                    results.append(r.scan_metadata)
+
+            job_detail = {
+                "job_id": job_id,
+                "tool": tool,
+                "status": job.status,
+                "step_order": job.step_order,
+                "error_message": job.error_message,
+                "results": results,
+            }
+            sub_job_details.append(job_detail)
+
+        total = workflow.total_steps or 0
+        percentage = (completed / total * 100) if total > 0 else 0
+        return {
+            "workflow": workflow,
+            "sub_jobs": sub_job_details,
+            "progress": {
+                "completed": completed,
+                "total": total,
+                "failed": failed,
+                "percentage": percentage
+            }
+        }
     def __init__(self, db: Session):
         self.db = db
         self.vpn_service = VPNService()
@@ -58,38 +214,126 @@ class WorkflowService:
             logger.info(f"Assigned VPN {vpn_assignment.get('hostname')} to workflow {workflow_id}")
 
         sub_jobs = self._create_sub_jobs_in_db(workflow_db, workflow_in.steps, vpn_assignment)
-
         crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"total_steps": len(sub_jobs)})
 
-        successful_submissions, failed_submissions = self._submit_sub_jobs(sub_jobs)
+        # Track detailed job submission results
+        successful_submissions, failed_submissions = [], []
+        sub_jobs_details = []
+        errors = []
+        for job in sub_jobs:
+            try:
+                scanner_response, _ = self.submission_service.submit_job(job)
+                crud_scan_job.update(self.db, db_obj=job, obj_in={"scanner_job_name": scanner_response.get("job_name"), "status": "running"})
+                successful_submissions.append(job)
+                sub_jobs_details.append({
+                    "job_id": job.job_id,
+                    "tool": job.tool,
+                    "targets": job.targets,
+                    "scanner_job": scanner_response.get("job_name")
+                })
+            except Exception as e:
+                error_message = str(e)
+                crud_scan_job.update(self.db, db_obj=job, obj_in={"status": "failed", "error_message": error_message})
+                failed_submissions.append(job)
+                errors.append({
+                    "job_id": job.job_id,
+                    "tool": job.tool,
+                    "targets": job.targets,
+                    "error": error_message
+                })
 
         status = "running" if successful_submissions else "failed"
         crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"status": status})
 
+        # Format vpn_assignment for response (country, hostname only)
+        vpn_assignment_resp = None
+        if vpn_assignment:
+            vpn_assignment_resp = {
+                "country": vpn_assignment.get("country"),
+                "hostname": vpn_assignment.get("hostname")
+            }
+
         return {
-            "workflow_id": workflow_id, "status": status, "total_steps": len(sub_jobs),
-            "successful_submissions": len(successful_submissions), "failed_submissions": len(failed_submissions),
-            "vpn_assignment": vpn_assignment
+            "workflow_id": workflow_id,
+            "status": status,
+            "strategy": getattr(workflow_in, "strategy", None),
+            "total_steps": len(sub_jobs),
+            "total_targets": len(getattr(workflow_in, "targets", []) or []),
+            "total_tools": len(getattr(workflow_in, "steps", []) or []),
+            "successful_submissions": len(successful_submissions),
+            "failed_submissions": len(failed_submissions),
+            "sub_jobs": sub_jobs_details,
+            "errors": errors,
+            "vpn_assignment": vpn_assignment_resp
         }
 
     def _create_sub_jobs_in_db(self, workflow_db: WorkflowJob, steps: list[workflow_schema.WorkflowStep], vpn_assignment: dict | None) -> list[ScanJob]:
-        """Tạo các bản ghi sub-job trong DB."""
+        """Tạo các bản ghi sub-job trong DB, hỗ trợ chia nhỏ cho port-scan và xoay VPN profile."""
+        import os
+        from app.utils.port_utils import parse_nmap_top_ports, parse_ports_all, parse_ports_custom, split_ports
         sub_jobs_to_create = []
         step_counter = 0
 
-        for step in steps:
+        for i, step in enumerate(steps):
+            # --- Custom logic for port-scan sharding ---
+            if step.tool_id == "port-scan":
+                params = step.params.copy() if step.params else {}
+                scanner_count = params.get("scanner_count")
+                vpn_profiles = params.get("vpn_profile")
+                port_option = params.get("ports")
+                # Nếu có scanner_count > 1 và vpn_profile là mảng, chia nhỏ sub-job
+                if isinstance(vpn_profiles, list) and scanner_count and int(scanner_count) > 1:
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                    if port_option == "top-1000":
+                        port_list = parse_nmap_top_ports(os.path.join(base_dir, "../../data/nmap-ports-top1000.txt"))
+                    elif port_option == "all":
+                        port_list = parse_ports_all(os.path.join(base_dir, "../../data/Ports-1-To-65535.txt"))
+                    else:
+                        port_list = parse_ports_custom(port_option)
+                    port_chunks = split_ports(port_list, int(scanner_count))
+                    for idx, chunk in enumerate(port_chunks):
+                        if not chunk:
+                            continue
+                        step_counter += 1
+                        job_id = f"scan-port-scan-{uuid4().hex[:6]}"
+                        chunk_params = params.copy()
+                        chunk_params["ports"] = ",".join(str(p) for p in chunk)
+                        chunk_vpn = vpn_profiles[idx] if idx < len(vpn_profiles) else None
+                        job = crud_scan_job.create(
+                            self.db,
+                            obj_in={
+                                "job_id": job_id,
+                                "tool": step.tool_id,
+                                "targets": workflow_db.targets,
+                                "options": chunk_params,
+                                "workflow_id": workflow_db.workflow_id,
+                                "step_order": step_counter,
+                                "vpn_profile": chunk_vpn,
+                                "vpn_country": getattr(workflow_db, "vpn_country", None),
+                                "vpn_assignment": None
+                            }
+                        )
+                        sub_jobs_to_create.append(job)
+                    continue  # skip default logic for this step
+            # --- Default logic for all other tools (và port-scan không chia nhỏ) ---
             step_counter += 1
             job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
-            job = ScanJob(
-                job_id=job_id, tool=step.tool_id, targets=workflow_db.targets,
-                options=step.params, workflow_id=workflow_db.workflow_id, step_order=step_counter,
-                vpn_assignment=vpn_assignment
+            step_params = step.params.copy() if step.params else {}
+            job = crud_scan_job.create(
+                self.db,
+                obj_in={
+                    "job_id": job_id,
+                    "tool": step.tool_id,
+                    "targets": workflow_db.targets,
+                    "options": step_params,
+                    "workflow_id": workflow_db.workflow_id,
+                    "step_order": step_counter,
+                    "vpn_profile": getattr(workflow_db, "vpn_profile", None),
+                    "vpn_country": getattr(workflow_db, "vpn_country", None),
+                    "vpn_assignment": vpn_assignment
+                }
             )
             sub_jobs_to_create.append(job)
-
-        self.db.add_all(sub_jobs_to_create)
-        self.db.commit()
-        for job in sub_jobs_to_create: self.db.refresh(job)
 
         return sub_jobs_to_create
 
@@ -162,3 +406,51 @@ class WorkflowService:
 
         logger.info(f"Deleted workflow {workflow_id} and all related resources.")
         return {"status": "deleted", "workflow_id": workflow_id, "deleted_scanner_jobs": deleted_scanner_jobs}
+    
+    def list_workflows(self, page: int = 1, page_size: int = 10) -> dict:
+        """Lấy danh sách workflow, tính lại progress, trả về đúng format dashboard."""
+        db = self.db
+        from app import schemas as app_schemas
+        query = db.query(WorkflowJob).order_by(WorkflowJob.id.desc())
+        total = query.count()
+        workflows = query.offset((page - 1) * page_size).limit(page_size).all()
+
+        for wf in workflows:
+            completed = db.query(ScanJob).filter(
+                ScanJob.workflow_id == wf.workflow_id,
+                ScanJob.status == "completed"
+            ).count()
+            failed = db.query(ScanJob).filter(
+                ScanJob.workflow_id == wf.workflow_id,
+                ScanJob.status == "failed"
+            ).count()
+            wf.completed_steps = completed
+            wf.failed_steps = failed
+            if (completed + failed) >= (wf.total_steps or 0):
+                if failed == 0:
+                    wf.status = "completed"
+                else:
+                    wf.status = "partially_failed"
+            elif (completed + failed) == 0:
+                wf.status = "pending"
+            else:
+                wf.status = "running"
+        db.commit()
+
+        def serialize_workflow(wf):
+            try:
+                return app_schemas.workflow.WorkflowJob.from_orm(wf).dict()
+            except Exception:
+                return {k: v for k, v in wf.__dict__.items() if not k.startswith('_')}
+
+        return {
+            "pagination": {
+                "total_items": total,
+                "total_pages": (total + page_size - 1) // page_size,
+                "current_page": page,
+                "page_size": page_size,
+                "has_next": (page * page_size) < total,
+                "has_previous": page > 1
+            },
+            "results": [serialize_workflow(wf) for wf in workflows]
+        }

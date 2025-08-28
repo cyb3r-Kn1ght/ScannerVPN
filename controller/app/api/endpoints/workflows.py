@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.schemas import workflow
 from app import crud
-from services.workflow_service import WorkflowService
-from services.result_service import ResultService
+from app.services.workflow_service import WorkflowService
+from app.services.result_service import ResultService
 from api.deps import get_workflow_service, get_result_service, get_db
 
 router = APIRouter()

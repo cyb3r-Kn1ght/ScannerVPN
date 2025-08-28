@@ -1,6 +1,6 @@
 # app/api/endpoints/admin.py
 from fastapi import APIRouter, Depends, HTTPException
-from services.admin_service import AdminService
+from app.services.admin_service import AdminService
 from api.deps import get_admin_service
 
 router = APIRouter()

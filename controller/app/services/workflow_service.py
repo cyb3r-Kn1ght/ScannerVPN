@@ -8,8 +8,8 @@ import httpx
 
 from app import crud, models, schemas
 from core.config import settings
-from services.vpn_service import VPNService
-from services.scan_submission_service import ScanSubmissionService
+from app.services.vpn_service import VPNService
+from app.services.scan_submission_service import ScanSubmissionService
 
 logger = logging.getLogger(__name__)
 

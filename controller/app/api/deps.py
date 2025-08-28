@@ -1,11 +1,11 @@
 # app/api/deps.py
 from fastapi import Depends
 from sqlalchemy.orm import Session
-from db.session import SessionLocal
-from services.admin_service import AdminService
-from services.workflow_service import WorkflowService
-from services.result_service import ResultService
-from services.scan_job_service import ScanJobService
+from app.db.session import SessionLocal
+from app.services.admin_service import AdminService
+from app.services.workflow_service import WorkflowService
+from app.services.result_service import ResultService
+from app.services.scan_job_service import ScanJobService
 
 def get_db():
     db = SessionLocal()

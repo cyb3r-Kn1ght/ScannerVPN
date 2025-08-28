@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app import crud
 from app.schemas import vpn_profile
 from api.deps import get_db
-from services.vpn_service import VPNService
+from app.services.vpn_service import VPNService
 
 router = APIRouter()
 vpn_service = VPNService()

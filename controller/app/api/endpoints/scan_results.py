@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Query, status
 from typing import Optional
 from app.schemas import scan_result
-from services.result_service import ResultService
+from app.services.result_service import ResultService
 from api.deps import get_result_service
 
 router = APIRouter()

@@ -1,7 +1,8 @@
 # app/api/endpoints/vpn.py
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
-from app import schemas, crud
+from app import crud
+from app.schemas import vpn_profile
 from api.deps import get_db
 from services.vpn_service import VPNService
 

@@ -1,14 +1,11 @@
 # app/main.py
-import sys
-import os
-# Thêm thư mục làm việc hiện tại vào Python Path để đảm bảo import hoạt động
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
 
 from fastapi import FastAPI
-from api.router import api_router
-from db.session import SessionLocal, engine
-from db.base import Base
-from db.init_db import init_vpn_profiles_if_empty # <--- THAY ĐỔI Ở ĐÂY
+from app.api.router import api_router
+from app.db.session import SessionLocal, engine
+from app.db.base import Base
+from app.db.init_db import init_vpn_profiles_if_empty # <--- THAY ĐỔI Ở ĐÂY
 
 # --- KHỞI TẠO ỨNG DỤNG ---
 

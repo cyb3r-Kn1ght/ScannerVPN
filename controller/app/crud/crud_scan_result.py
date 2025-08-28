@@ -1,8 +1,8 @@
 # app/crud/crud_scan_result.py
 import math
 from sqlalchemy.orm import Session
-from models.scan_result import ScanResult
-from schemas.scan_result import ScanResultCreate, PaginatedScanResults, PaginationInfo
+from app.models.scan_result import ScanResult
+from app.schemas.scan_result import ScanResultCreate, PaginatedScanResults, PaginationInfo
 
 def create(db: Session, *, result_in: ScanResultCreate) -> ScanResult:
     """Lưu một kết quả quét mới vào DB."""

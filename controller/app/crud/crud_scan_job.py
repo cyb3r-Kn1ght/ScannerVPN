@@ -1,8 +1,8 @@
 # app/crud/crud_scan_job.py
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List
-from models.scan_job import ScanJob
-from models.scan_result import ScanResult
+from app.models.scan_job import ScanJob
+from app.models.scan_result import ScanResult
 
 def get(db: Session, *, job_id: str) -> ScanJob | None:
     """Lấy một scan job bằng job_id."""

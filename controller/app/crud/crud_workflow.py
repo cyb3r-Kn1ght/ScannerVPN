@@ -1,8 +1,8 @@
 # app/crud/crud_workflow.py
 from sqlalchemy.orm import Session
 from typing import Dict, Any
-from models.workflow_job import WorkflowJob
-from schemas.workflow import WorkflowRequest
+from app.models.workflow_job import WorkflowJob
+from app.schemas.workflow import WorkflowRequest
 
 def get_workflow_by_id(db: Session, *, workflow_id: str) -> WorkflowJob | None:
     """Lấy một workflow bằng workflow_id."""

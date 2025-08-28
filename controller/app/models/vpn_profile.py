@@ -1,7 +1,7 @@
 # app/models/vpn_profile.py
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.types import PickleType
-from db.base import Base # <--- Thay đổi ở đây
+from app.db.base import Base # <--- Thay đổi ở đây
 
 class VpnProfile(Base):
     __tablename__ = "vpn_profiles"

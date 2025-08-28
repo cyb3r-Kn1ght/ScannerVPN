@@ -1,6 +1,6 @@
 # app/models/scan_result.py
 from sqlalchemy import Column, Integer, String, DateTime, JSON
-from db.base import Base # <--- Import từ base
+from app.db.base import Base # <--- Import từ base
 import datetime
 
 class ScanResult(Base):

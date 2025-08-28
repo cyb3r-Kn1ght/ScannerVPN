@@ -1,7 +1,9 @@
 # app/services/admin_service.py
 import logging
 from sqlalchemy.orm import Session
-from models import scan_result, scan_job, workflow_job
+from app.models import scan_result
+from app.models import scan_job
+from app.models import workflow_job
 
 logger = logging.getLogger(__name__)
 

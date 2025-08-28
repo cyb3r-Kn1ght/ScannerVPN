@@ -2,7 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
-from app import crud, schemas, models
+from app import crud, models
+from app.schemas import scan_job
 from services.scan_job_service import ScanJobService
 from api.deps import get_db, get_scan_job_service
 
@@ -12,14 +13,14 @@ router = APIRouter()
 @router.post("/api/scan/{tool_name}", status_code=201, summary="Tạo job quét đơn lẻ cho một tool cụ thể")
 async def create_tool_scan(
         tool_name: str,
-        req: schemas.scan_job.ScanJobRequest,
+    req: scan_job.ScanJobRequest,
         scan_job_service: ScanJobService = Depends(get_scan_job_service)
 ):
     req.tool = tool_name
     return await scan_job_service.create_and_dispatch_scan(job_in=req)
 
 # Giữ nguyên endpoint gốc: GET /api/scan_jobs/{job_id}
-@router.get("/api/scan_jobs/{job_id}", response_model=schemas.scan_job.ScanJob, summary="Lấy thông tin chi tiết của một scan job")
+@router.get("/api/scan_jobs/{job_id}", response_model=scan_job.ScanJob, summary="Lấy thông tin chi tiết của một scan job")
 def get_scan_job_details(
         job_id: str,
         db: Session = Depends(get_db)
@@ -30,7 +31,7 @@ def get_scan_job_details(
     return job
 
 # Giữ nguyên endpoint gốc: GET /api/scan_jobs
-@router.get("/api/scan_jobs", response_model=List[schemas.scan_job.ScanJob], summary="Lấy danh sách các scan job")
+@router.get("/api/scan_jobs", response_model=List[scan_job.ScanJob], summary="Lấy danh sách các scan job")
 def get_scan_jobs_list(
         skip: int = Query(0, ge=0),
         limit: int = Query(100, ge=1),

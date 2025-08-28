@@ -1,7 +1,7 @@
 # app/models/scan_job.py
 from sqlalchemy import Column, Integer, String, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import relationship
-from db.base import Base # <--- Import từ base
+from app.db.base import Base # <--- Import từ base
 import datetime
 
 class ScanJob(Base):

@@ -1,6 +1,6 @@
 # app/crud/crud_vpn_profile.py
 from sqlalchemy.orm import Session
-from models.vpn_profile import VpnProfile
+from app.models.vpn_profile import VpnProfile
 
 def get_all(db: Session) -> list[VpnProfile]:
     return db.query(VpnProfile).all()

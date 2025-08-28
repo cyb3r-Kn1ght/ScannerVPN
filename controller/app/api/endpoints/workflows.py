@@ -1,7 +1,8 @@
 # app/api/endpoints/workflows.py
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from app import schemas, crud
+from app.schemas import workflow
+from app import crud
 from services.workflow_service import WorkflowService
 from services.result_service import ResultService
 from api.deps import get_workflow_service, get_result_service, get_db
@@ -12,7 +13,7 @@ router = APIRouter()
 @router.post("/api/scan/workflow", status_code=201, summary="Tạo và bắt đầu một workflow quét mới")
 async def create_workflow(
         *,
-        workflow_in: schemas.workflow.WorkflowRequest,
+    workflow_in: workflow.WorkflowRequest,
         workflow_service: WorkflowService = Depends(get_workflow_service)
 ):
     try:

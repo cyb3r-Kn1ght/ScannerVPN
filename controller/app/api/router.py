@@ -1,6 +1,6 @@
 # app/api/router.py
 from fastapi import APIRouter
-from app.api.endpoints import (
+from .endpoints import (
     admin,
     scan_jobs,
     scan_results,

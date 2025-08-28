@@ -6,7 +6,9 @@ from fastapi import HTTPException
 import httpx
 import asyncio
 
-from app import crud, models, schemas
+from app.crud import crud_scan_job
+from app.schemas import scan_job as scan_job_schema
+from app.models.scan_job import ScanJob
 from app.core.config import settings
 from app.services.vpn_service import VPNService
 from app.services.scan_submission_service import ScanSubmissionService
@@ -19,7 +21,7 @@ class ScanJobService:
         self.vpn_service = VPNService()
         self.submission_service = ScanSubmissionService()
 
-    async def _assign_vpn_to_job(self, job_in: schemas.scan_job.ScanJobRequest) -> dict | None:
+    async def _assign_vpn_to_job(self, job_in: scan_job_schema.ScanJobRequest) -> dict | None:
         """Gán VPN cho một job quét đơn lẻ."""
         try:
             # Ưu tiên VPN do người dùng chỉ định
@@ -45,11 +47,11 @@ class ScanJobService:
                 return {"filename": job_in.vpn_profile, "country": job_in.country or "Unknown"}
             return None
 
-    async def create_and_dispatch_scan(self, *, job_in: schemas.scan_job.ScanJobRequest) -> models.ScanJob:
+    async def create_and_dispatch_scan(self, *, job_in: scan_job_schema.ScanJobRequest) -> ScanJob:
         """Tạo, gán VPN và gửi đi một job quét đơn lẻ."""
         job_id = f"scan-{job_in.tool}-{uuid4().hex[:6]}"
 
-        db_job = models.ScanJob(
+        db_job = ScanJob(
             job_id=job_id, tool=job_in.tool, targets=job_in.targets,
             options=job_in.options, status="submitted",
             vpn_profile=job_in.vpn_profile, vpn_country=job_in.country
@@ -61,22 +63,22 @@ class ScanJobService:
             db_job.vpn_hostname = vpn_assignment.get('hostname')
             if not db_job.vpn_country: db_job.vpn_country = vpn_assignment.get('country')
 
-        crud.crud_scan_job.create(db=self.db, job_obj=db_job)
+        crud_scan_job.create(db=self.db, job_obj=db_job)
 
         try:
             scanner_response, _ = self.submission_service.submit_job(db_job)
-            crud.crud_scan_job.update(self.db, db_obj=db_job, obj_in={
+            crud_scan_job.update(self.db, db_obj=db_job, obj_in={
                 "scanner_job_name": scanner_response.get("job_name"), "status": "running"
             })
         except Exception as e:
-            crud.crud_scan_job.update(self.db, db_obj=db_job, obj_in={"status": "failed", "error_message": str(e)})
+            crud_scan_job.update(self.db, db_obj=db_job, obj_in={"status": "failed", "error_message": str(e)})
             raise HTTPException(status_code=500, detail=f"Failed to submit scan to scanner node: {e}")
 
         return db_job
 
     def delete_scan_job(self, job_id: str) -> dict:
         """Xóa một scan job ở cả controller và scanner node."""
-        job_db = crud.crud_scan_job.get(db=self.db, job_id=job_id)
+        job_db = crud_scan_job.get(db=self.db, job_id=job_id)
         if not job_db:
             raise HTTPException(status_code=404, detail="Scan job not found")
 
@@ -89,6 +91,6 @@ class ScanJobService:
             except Exception as e:
                 scanner_node_response = {"error": str(e)}
 
-        crud.crud_scan_job.remove_and_related_results(db=self.db, db_obj=job_db)
+        crud_scan_job.remove_and_related_results(db=self.db, db_obj=job_db)
 
         return {"status": "deleted", "job_id": job_id, "scanner_job_name": scanner_job_name, "scanner_node_response": scanner_node_response}

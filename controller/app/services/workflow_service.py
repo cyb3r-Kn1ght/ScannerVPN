@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 import httpx
 
-from app import crud, models, schemas
+from app.crud import crud_workflow, crud_scan_job
+from app.schemas import workflow as workflow_schema, scan_job as scan_job_schema
+from app.models.workflow_job import WorkflowJob
+from app.models.scan_job import ScanJob
 from app.core.config import settings
 from app.services.vpn_service import VPNService
 from app.services.scan_submission_service import ScanSubmissionService
@@ -19,7 +22,7 @@ class WorkflowService:
         self.vpn_service = VPNService()
         self.submission_service = ScanSubmissionService()
 
-    async def _assign_vpn_to_workflow(self, workflow_req: schemas.workflow.WorkflowRequest) -> dict | None:
+    async def _assign_vpn_to_workflow(self, workflow_req: workflow_schema.WorkflowRequest) -> dict | None:
         """Gán VPN cho toàn bộ workflow."""
         try:
             all_vpns = await self.vpn_service.fetch_vpns()
@@ -42,26 +45,26 @@ class WorkflowService:
             logger.warning(f"Failed to assign VPN for workflow: {e}")
             return None
 
-    async def create_and_dispatch_workflow(self, *, workflow_in: schemas.workflow.WorkflowRequest) -> dict:
+    async def create_and_dispatch_workflow(self, *, workflow_in: workflow_schema.WorkflowRequest) -> dict:
         """Tạo và thực thi một workflow quét mới."""
         logger.info(f"Creating workflow for targets: {workflow_in.targets}")
 
         workflow_id = f"workflow-{uuid4().hex[:8]}"
-        workflow_db = crud.crud_workflow.create_workflow(db=self.db, workflow_in=workflow_in, workflow_id=workflow_id)
+        workflow_db = crud_workflow.create_workflow(db=self.db, workflow_in=workflow_in, workflow_id=workflow_id)
 
         vpn_assignment = await self._assign_vpn_to_workflow(workflow_in)
         if vpn_assignment:
-            crud.crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"vpn_assignment": vpn_assignment, "vpn_country": vpn_assignment.get('country')})
+            crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"vpn_assignment": vpn_assignment, "vpn_country": vpn_assignment.get('country')})
             logger.info(f"Assigned VPN {vpn_assignment.get('hostname')} to workflow {workflow_id}")
 
         sub_jobs = self._create_sub_jobs_in_db(workflow_db, workflow_in.steps, vpn_assignment)
 
-        crud.crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"total_steps": len(sub_jobs)})
+        crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"total_steps": len(sub_jobs)})
 
         successful_submissions, failed_submissions = self._submit_sub_jobs(sub_jobs)
 
         status = "running" if successful_submissions else "failed"
-        crud.crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"status": status})
+        crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"status": status})
 
         return {
             "workflow_id": workflow_id, "status": status, "total_steps": len(sub_jobs),
@@ -69,7 +72,7 @@ class WorkflowService:
             "vpn_assignment": vpn_assignment
         }
 
-    def _create_sub_jobs_in_db(self, workflow_db: models.WorkflowJob, steps: list[schemas.WorkflowStep], vpn_assignment: dict | None) -> list[models.ScanJob]:
+    def _create_sub_jobs_in_db(self, workflow_db: WorkflowJob, steps: list[workflow_schema.WorkflowStep], vpn_assignment: dict | None) -> list[ScanJob]:
         """Tạo các bản ghi sub-job trong DB."""
         sub_jobs_to_create = []
         step_counter = 0
@@ -77,7 +80,7 @@ class WorkflowService:
         for step in steps:
             step_counter += 1
             job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
-            job = models.ScanJob(
+            job = ScanJob(
                 job_id=job_id, tool=step.tool_id, targets=workflow_db.targets,
                 options=step.params, workflow_id=workflow_db.workflow_id, step_order=step_counter,
                 vpn_assignment=vpn_assignment
@@ -90,29 +93,29 @@ class WorkflowService:
 
         return sub_jobs_to_create
 
-    def _submit_sub_jobs(self, sub_jobs: list[models.ScanJob]) -> tuple[list, list]:
+    def _submit_sub_jobs(self, sub_jobs: list[ScanJob]) -> tuple[list, list]:
         """Gửi các sub-job tới scanner node."""
         successful_submissions, failed_submissions = [], []
 
         for job in sub_jobs:
             try:
                 scanner_response, _ = self.submission_service.submit_job(job)
-                crud.crud_scan_job.update(self.db, db_obj=job, obj_in={"scanner_job_name": scanner_response.get("job_name"), "status": "running"})
+                crud_scan_job.update(self.db, db_obj=job, obj_in={"scanner_job_name": scanner_response.get("job_name"), "status": "running"})
                 successful_submissions.append(job.job_id)
             except Exception as e:
                 error_message = str(e)
-                crud.crud_scan_job.update(self.db, db_obj=job, obj_in={"status": "failed", "error_message": error_message})
+                crud_scan_job.update(self.db, db_obj=job, obj_in={"status": "failed", "error_message": error_message})
                 failed_submissions.append({"job_id": job.job_id, "error": error_message})
 
         return successful_submissions, failed_submissions
 
     def get_status(self, workflow_id: str) -> dict:
         """Lấy trạng thái chi tiết của một workflow."""
-        workflow = crud.crud_workflow.get_workflow_by_id(self.db, workflow_id=workflow_id)
+        workflow = crud_workflow.get_workflow_by_id(self.db, workflow_id=workflow_id)
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        sub_jobs = crud.crud_scan_job.get_by_workflow(self.db, workflow_id=workflow_id)
+        sub_jobs = crud_scan_job.get_by_workflow(self.db, workflow_id=workflow_id)
 
         completed = sum(1 for job in sub_jobs if job.status == "completed")
         failed = sum(1 for job in sub_jobs if job.status == "failed")
@@ -138,11 +141,11 @@ class WorkflowService:
 
     def delete_workflow(self, workflow_id: str) -> dict:
         """Xóa workflow và tất cả các tài nguyên liên quan."""
-        workflow = crud.crud_workflow.get_workflow_by_id(self.db, workflow_id=workflow_id)
+        workflow = crud_workflow.get_workflow_by_id(self.db, workflow_id=workflow_id)
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        sub_jobs = crud.crud_scan_job.get_by_workflow(self.db, workflow_id=workflow_id)
+        sub_jobs = crud_scan_job.get_by_workflow(self.db, workflow_id=workflow_id)
         deleted_scanner_jobs = []
 
         for job in sub_jobs:
@@ -153,9 +156,9 @@ class WorkflowService:
                 except Exception as e:
                     deleted_scanner_jobs.append({"job_id": job.job_id, "scanner_job": job.scanner_job_name, "error": str(e)})
 
-            crud.crud_scan_job.remove_and_related_results(self.db, db_obj=job)
+            crud_scan_job.remove_and_related_results(self.db, db_obj=job)
 
-        crud.crud_workflow.remove(self.db, db_obj=workflow)
+        crud_workflow.remove(self.db, db_obj=workflow)
 
         logger.info(f"Deleted workflow {workflow_id} and all related resources.")
         return {"status": "deleted", "workflow_id": workflow_id, "deleted_scanner_jobs": deleted_scanner_jobs}

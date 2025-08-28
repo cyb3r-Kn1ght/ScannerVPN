@@ -3,7 +3,7 @@ import re
 import os
 from typing import List, Dict, Optional
 from collections import defaultdict
-from core.config import settings # <--- Thêm import này
+from app.core.config import settings # <--- Thêm import này
 
 
 class VPNService:

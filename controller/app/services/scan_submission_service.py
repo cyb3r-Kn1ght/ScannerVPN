@@ -2,8 +2,8 @@
 import httpx
 import logging
 from typing import Dict, Any, Tuple
-from core.config import settings
-from models.scan_job import ScanJob
+from app.core.config import settings
+from app.models.scan_job import ScanJob
 
 logger = logging.getLogger(__name__)
 

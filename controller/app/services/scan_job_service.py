@@ -7,7 +7,7 @@ import httpx
 import asyncio
 
 from app import crud, models, schemas
-from core.config import settings
+from app.core.config import settings
 from app.services.vpn_service import VPNService
 from app.services.scan_submission_service import ScanSubmissionService
 

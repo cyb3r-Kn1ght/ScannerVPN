@@ -5,7 +5,7 @@ from app.schemas import workflow
 from app import crud
 from app.services.workflow_service import WorkflowService
 from app.services.result_service import ResultService
-from api.deps import get_workflow_service, get_result_service, get_db
+from app.api.deps import get_workflow_service, get_result_service, get_db
 
 router = APIRouter()
 

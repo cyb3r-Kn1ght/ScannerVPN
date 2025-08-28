@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from app import crud
 from app.schemas import vpn_profile
-from api.deps import get_db
+from app.api.deps import get_db
 from app.services.vpn_service import VPNService
 
 router = APIRouter()

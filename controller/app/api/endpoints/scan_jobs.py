@@ -5,7 +5,7 @@ from typing import Dict, Any, List
 from app import crud, models
 from app.schemas import scan_job
 from app.services.scan_job_service import ScanJobService
-from api.deps import get_db, get_scan_job_service
+from app.api.deps import get_db, get_scan_job_service
 
 router = APIRouter()
 

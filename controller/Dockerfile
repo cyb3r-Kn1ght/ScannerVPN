@@ -17,5 +17,5 @@ ENV DATABASE_URL=sqlite:////data/scan_results.db
 
 EXPOSE 8000
 # Gọi ứng dụng từ main.py (đã được copy vào /app)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 #CMD ["sleep", "3600"]

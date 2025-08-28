@@ -8,7 +8,7 @@ COPY requirements.txt tools.yaml data/nmap-ports-top1000.txt data/Ports-1-To-655
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy toàn bộ nội dung thư mục 'app' vào WORKDIR (/app)
-COPY ./app .
+COPY ./app ./app
 
 # Tạo thư mục /data để chứa SQLite file
 RUN mkdir -p /data

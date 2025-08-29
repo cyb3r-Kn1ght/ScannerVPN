@@ -1,183 +1,148 @@
-# Distributed Scanner System (Kubernetes)
-
-## 📝 Tổng quan hệ thống
-
-Hệ thống quét bảo mật phân tán, điều phối qua Controller (FastAPI), thực thi scan qua các Scanner Node API (Python FastAPI, chạy trong Kubernetes), sử dụng các Job/Pod động để thực hiện các tác vụ như port scan, httpx, nuclei, wpscan, dns lookup... Kết quả lưu về database (SQLite).
-
-### Kiến trúc tổng thể
-
-```
-Dashboard/User
-		↓ (HTTP API)
-Controller (FastAPI, DB)
-		↓ (API call)
-Scanner Node API (FastAPI, K8s)
-		↓ (Tạo K8s Job/Pod)
-Kubernetes Cluster
-		↓ (Kết quả scan)
-Controller DB
-```
-
-- **Controller**: Điều phối workflow, quản lý DB, cung cấp REST API cho dashboard.
-- **Scanner Node API**: Nhận lệnh từ controller, tạo/xóa các K8s Job/Pod để thực thi scan.
-- **Scanner Jobs**: Pod động, mỗi job thực hiện 1 tác vụ scan, trả kết quả về controller.
+# ScannerVPN Backend Documentation
 
 ---
 
-## 🚦 Quy trình hoạt động
+## 🛡️ 1. Tổng quan hệ thống
 
-1. Dashboard gửi yêu cầu scan (qua API Controller)
-2. Controller tạo workflow, chia nhỏ thành các scan job (sub-job)
-3. Controller gọi Scanner Node API để tạo các K8s Job/Pod tương ứng
-4. Scanner Node API tạo K8s Job, Pod thực thi scan tool (portscan, httpx, nuclei...)
-5. Pod scan xong gửi kết quả về Controller (API)
-6. Controller lưu kết quả vào DB, cập nhật trạng thái workflow
-7. Khi cần, Controller/Scanner Node có thể xóa pod/job, workflow, kết quả liên quan
+> **ScannerVPN** là nền tảng quản lý và điều phối các job quét bảo mật phân tán, hỗ trợ nhiều tool (port-scan, httpx, nuclei, sqlmap, wpscan, bruteforce, dirsearch, dns-lookup, ffuf, ...) với khả năng chia nhỏ công việc (sharding), gom kết quả, quản lý VPN profile, và tích hợp với Kubernetes/Docker.
 
----
-
-## ⚙️ Build & Deploy
-
-### 1. Build Docker images
-
-```bash
-cd controller
-make build
-cd ../scanner-node-api
-make build
-```
-
-Hoặc build thủ công:
-```bash
-docker build -t controller:latest ./controller
-# Lặp lại cho từng thư mục scan-node-tools/* nếu muốn build riêng từng tool
-```
-
-### 2. Deploy lên Kubernetes
-
-```bash
-kubectl apply -f manifests/namespace.yaml
-kubectl apply -f manifests/controller-deployment.yaml
-kubectl apply -f manifests/controller-service.yaml
-kubectl apply -f manifests/scanner-node-api-deployment.yaml
-kubectl apply -f manifests/scanner-node-api-service.yaml
-kubectl apply -f manifests/controller-rbac.yaml
-kubectl apply -f manifests/controller-pv.yaml
-kubectl apply -f manifests/scanner-node-rbac.yaml
-# Có thể apply thêm các job mẫu trong manifests/jobs/*
-```
-
-### 3. Port-forward để test API
-
-```bash
-kubectl port-forward -n scan-system svc/controller 8000:80
-kubectl port-forward -n scan-system svc/scanner-node-api 8080:8080
-```
+| Thành phần | Công nghệ |
+|------------|-----------|
+| Backend    | FastAPI, SQLAlchemy, Pydantic |
+| Triển khai | Docker, Kubernetes |
 
 ---
 
-## 🚀 Sử dụng API
+## 🚦 2. Các API chính
 
-### Khởi tạo workflow scan
-```bash
-curl -X POST http://localhost:8000/api/scan/workflow \
-	-H "Content-Type: application/json" \
-	-d '{
-		"targets": ["scanme.nmap.org"],
-		"scan_types": ["port-scan", "httpx", "nuclei"],
-		"strategy": "wide"
-	}'
+### 2.1. Quản lý Workflow
+- **Tạo workflow:** `POST /api/workflow`  
+	Body: JSON theo schema `WorkflowRequest` (nhiều bước, mỗi bước là 1 tool)
+- **Lấy danh sách workflow:** `GET /api/workflows`
+- **Lấy trạng thái workflow:** `GET /api/workflows/{workflow_id}/status`
+
+### 2.2. Quản lý Scan Job
+- **Tạo job quét cho 1 tool:** `POST /api/scan/{tool_name}`  
+	Body: JSON theo schema `ScanJobRequest` (tham số hợp lệ tuỳ tool, xem mục 3)
+- **Lấy chi tiết job:** `GET /api/scan_jobs/{job_id}`
+- **Lấy danh sách job:** `GET /api/scan_jobs?skip=0&limit=100`
+- **Xoá job:** `DELETE /api/scan_jobs/{job_id}`
+- **Xoá job trên scanner node (không xoá DB):** `DELETE /api/scan_jobs/{job_id}/scanner_job`
+- **Cập nhật trạng thái job:** `PATCH /api/scan_jobs/{job_id}/status`  
+	Body: `{ "status": "submitted|running|completed|failed" }`
+
+### 2.3. Kết quả sub-job (tool đặc thù)
+- **Lấy kết quả sub-job (đã merge/dedup):** `GET /api/sub_jobs/{sub_job_id}/results`
+
+### 2.4. Quản lý VPN
+- **Tạo VPN profile:** `POST /api/vpn_profiles`
+- **Lấy danh sách VPN profile:** `GET /api/vpn_profiles`
+- **Lấy danh sách VPN proxy node:** `GET /api/vpns`
+
+### 2.5. Liệt kê schema tham số hợp lệ cho từng tool
+- **Lấy schema tool:** `GET /api/tools`  
+	Trả về danh sách các tool và tham số hợp lệ (dùng để build UI hoặc validate request)
+
+---
+
+## 🧩 3. Tham số hợp lệ cho từng tool (theo /api/tools)
+
+Ví dụ response `/api/tools`:
+
+```json
+[
+	{
+		"name": "port-scan",
+		"parameters": [
+			{"name": "target", "type": "str", "required": true, "desc": "IP/domain cần quét"},
+			{"name": "ports", "type": "str", "required": false, "desc": "Danh sách port, ví dụ: 80,443,8080"},
+			{"name": "all_ports", "type": "bool", "required": false, "desc": "Quét toàn bộ port"},
+			{"name": "top_ports", "type": "int", "required": false, "desc": "Quét top N port phổ biến"},
+			{"name": "vpn_profile", "type": "str", "required": false, "desc": "VPN profile sử dụng"}
+		]
+	},
+	{
+		"name": "httpx",
+		"parameters": [
+			{"name": "target", "type": "str", "required": true, "desc": "IP/domain cần quét"},
+			{"name": "ports", "type": "str", "required": false, "desc": "Danh sách port"},
+			{"name": "vpn_profile", "type": "str", "required": false, "desc": "VPN profile sử dụng"}
+		]
+	}
+	// ...
+]
+```
+> Để lấy danh sách tham số hợp lệ mới nhất, luôn gọi `GET /api/tools`.
+
+---
+
+## 📝 4. Ví dụ sử dụng API
+
+### 4.1. Tạo workflow phức tạp
+```json
+POST /api/workflow
+{
+	"name": "Example Workflow",
+	"steps": [
+		{
+			"tool": "port-scan",
+			"parameters": {
+				"target": "example.com",
+				"top_ports": 100
+			}
+		},
+		{
+			"tool": "httpx",
+			"parameters": {
+				"target": "example.com"
+			}
+		}
+	]
+}
 ```
 
-### Xem trạng thái workflow
-```bash
-curl http://localhost:8000/api/workflows/<workflow_id>
+### 4.2. Tạo job quét port-scan đơn lẻ
+```json
+POST /api/scan/port-scan
+{
+	"target": "example.com",
+	"top_ports": 100
+}
 ```
 
-### Xem kết quả scan
-```bash
-curl http://localhost:8000/api/scan_results?workflow_id=<workflow_id>
+### 4.3. Lấy kết quả sub-job port-scan
+```
+GET /api/sub_jobs/{sub_job_id}/results
 ```
 
-### Xóa job, workflow, pod/job scanner
+---
 
-- Xóa 1 scan job (DB + pod/job):
-	```bash
-	curl -X DELETE http://localhost:8000/api/scan_jobs/<job_id>/full_delete
-	```
-- Chỉ xóa pod/job scanner (không xóa DB):
-	```bash
-	curl -X DELETE http://localhost:8000/api/scan_jobs/<job_id>/scanner_job
-	```
-- Xóa toàn bộ workflow (toàn bộ sub-job, kết quả, pod/job liên quan):
-	```bash
-	curl -X DELETE http://localhost:8000/api/workflows/<workflow_id>
-	```
-- Xóa toàn bộ database (chỉ dùng cho dev/test):
-	```bash
-	curl -X DELETE http://localhost:8000/api/database/clear
-	```
+## ⚙️ 5. Build & Triển khai
 
-> Khi xóa pod/job đã bị xóa trước đó, API trả về `{ "status": "not found" }` thay vì lỗi dài dòng.
+- **Build Docker:**
+	```sh
+	cd controller
+	docker build -t scannervpn-backend .
+	```
+- **Chạy local:**
+	```sh
+	cd controller
+	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	```
+- **Triển khai Kubernetes:**
+	- Sử dụng các file trong `manifests/`
 
 ---
 
-## 🛠️ Phát triển & debug
+## 🛠️ 6. Lưu ý vận hành
 
-- Xem log controller:
-	```bash
-	kubectl logs -n scan-system -l app=controller
-	```
-- Xem log scanner node:
-	```bash
-	kubectl logs -n scan-system -l app=scanner-node-api
-	```
-- Xem log pod scan:
-	```bash
-	kubectl logs -n scan-system -l job-name=<job_name>
-	```
-- Xem trạng thái resource:
-	```bash
-	kubectl get pods -n scan-system
-	kubectl get jobs -n scan-system
-	kubectl get svc -n scan-system
-	```
+- Đảm bảo file dữ liệu (ví dụ nmap-ports-top1000.txt) có trong container nếu dùng port-scan.
+- Scanner node phải luôn tuân thủ danh sách port được giao (không tự ý quét all nếu không được chỉ định).
+- Khi gặp lỗi duplicate port hoặc không chia shard đúng, kiểm tra lại logic sharding và scanner-side code.
+- Để cập nhật địa chỉ VPN proxy node, sửa trong file manifest hoặc biến môi trường tương ứng.
 
 ---
 
-## 🔒 Bảo mật & mở rộng
+## 🤝 7. Liên hệ & đóng góp
 
-- RBAC tối thiểu cho từng service
-- Tách namespace riêng (scan-system)
-- Có thể scale scanner-node-api, controller
-- Có thể thay SQLite bằng PostgreSQL/MySQL nếu cần
-
----
-
-## 📚 Tham khảo endpoint chính
-
-- `POST /api/scan/workflow` — Tạo workflow scan mới
-- `GET /api/workflows/{workflow_id}` — Xem trạng thái workflow
-- `GET /api/scan_results` — Lấy kết quả scan
-- `DELETE /api/scan_jobs/{job_id}/full_delete` — Xóa job (DB + pod/job)
-- `DELETE /api/scan_jobs/{job_id}/scanner_job` — Chỉ xóa pod/job scanner
-- `DELETE /api/workflows/{workflow_id}` — Xóa toàn bộ workflow, sub-job, pod/job
-- `DELETE /api/database/clear` — Xóa toàn bộ database (dev/test)
-
----
-
-## 📦 Thư mục chính
-
-- `controller/` — FastAPI controller, DB, API chính
-- `scanner-node-api/` — FastAPI scanner node, quản lý K8s job/pod
-- `scan-node-tools/` — Các tool scan (port-scan, httpx, nuclei, wpscan, dns-lookup...)
-- `manifests/` — K8s manifests
-
----
-
-## 📝 Ghi chú
-
-- Đảm bảo đã build image trước khi deploy lên K8s
-- Có thể mở rộng thêm tool scan mới bằng cách thêm vào `scan-node-tools/` và cập nhật scanner-node-api
-- Khi xóa job/workflow, hệ thống sẽ tự động dọn dẹp pod/job và dữ liệu liên quan
-- Nếu cần hướng dẫn chi tiết hơn, xem code hoặc liên hệ maintainer
+- Mọi thắc mắc, bug, hoặc đóng góp vui lòng tạo issue hoặc liên hệ maintainer.

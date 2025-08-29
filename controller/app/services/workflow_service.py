@@ -299,40 +299,36 @@ class WorkflowService:
                         chunk_params = params.copy()
                         chunk_params["ports"] = ",".join(str(p) for p in chunk)
                         chunk_vpn = vpn_profiles[idx] if idx < len(vpn_profiles) else None
-                        job = crud_scan_job.create(
-                            self.db,
-                            obj_in={
-                                "job_id": job_id,
-                                "tool": step.tool_id,
-                                "targets": workflow_db.targets,
-                                "options": chunk_params,
-                                "workflow_id": workflow_db.workflow_id,
-                                "step_order": step_counter,
-                                "vpn_profile": chunk_vpn,
-                                "vpn_country": getattr(workflow_db, "vpn_country", None),
-                                "vpn_assignment": None
-                            }
+                        job_obj = ScanJob(
+                            job_id=job_id,
+                            tool=step.tool_id,
+                            targets=workflow_db.targets,
+                            options=chunk_params,
+                            workflow_id=workflow_db.workflow_id,
+                            step_order=step_counter,
+                            vpn_profile=chunk_vpn,
+                            vpn_country=getattr(workflow_db, "vpn_country", None),
+                            vpn_assignment=None
                         )
+                        job = crud_scan_job.create(self.db, job_obj=job_obj)
                         sub_jobs_to_create.append(job)
                     continue  # skip default logic for this step
             # --- Default logic for all other tools (và port-scan không chia nhỏ) ---
             step_counter += 1
             job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
             step_params = step.params.copy() if step.params else {}
-            job = crud_scan_job.create(
-                self.db,
-                obj_in={
-                    "job_id": job_id,
-                    "tool": step.tool_id,
-                    "targets": workflow_db.targets,
-                    "options": step_params,
-                    "workflow_id": workflow_db.workflow_id,
-                    "step_order": step_counter,
-                    "vpn_profile": getattr(workflow_db, "vpn_profile", None),
-                    "vpn_country": getattr(workflow_db, "vpn_country", None),
-                    "vpn_assignment": vpn_assignment
-                }
+            job_obj = ScanJob(
+                job_id=job_id,
+                tool=step.tool_id,
+                targets=workflow_db.targets,
+                options=step_params,
+                workflow_id=workflow_db.workflow_id,
+                step_order=step_counter,
+                vpn_profile=getattr(workflow_db, "vpn_profile", None),
+                vpn_country=getattr(workflow_db, "vpn_country", None),
+                vpn_assignment=vpn_assignment
             )
+            job = crud_scan_job.create(self.db, job_obj=job_obj)
             sub_jobs_to_create.append(job)
 
         return sub_jobs_to_create

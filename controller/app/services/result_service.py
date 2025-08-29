@@ -94,3 +94,73 @@ class ResultService:
             summary_by_target[tgt]["web_technologies"] = list(summary_by_target[tgt]["web_technologies"])
 
         return {"summary": list(summary_by_target.values())}
+    
+    def get_sub_job_results(self, sub_job_id: str, page: int, page_size: int, db: Session):
+        """Lấy kết quả của sub-job, nếu là port-scan chia nhỏ thì merge kết quả các sub-job cùng nhóm."""
+        from app.models.scan_job import ScanJob
+        from app.models.scan_result import ScanResult
+        job = db.query(ScanJob).filter(ScanJob.job_id == sub_job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Scan job not found")
+
+        # Nếu là port-scan và thuộc workflow, thực hiện merge kết quả các sub-job cùng nhóm
+        if job.tool == "port-scan" and job.workflow_id:
+            sub_jobs = db.query(ScanJob).filter(
+                ScanJob.workflow_id == job.workflow_id,
+                ScanJob.tool == "port-scan",
+                ScanJob.targets == job.targets
+            ).all()
+            job_ids = [j.job_id for j in sub_jobs]
+            scan_results = db.query(ScanResult).filter(
+                ScanResult.scan_metadata.op('->>')('job_id').in_(job_ids)
+            ).all()
+            # Merge open_ports
+            merged_ports = []
+            seen = set()
+            for r in scan_results:
+                for p in (r.open_ports or []):
+                    key = (p.get("ip"), p.get("port"), p.get("protocol", "tcp"))
+                    if key not in seen:
+                        seen.add(key)
+                        merged_ports.append(p)
+            total = len(merged_ports)
+            start = (page - 1) * page_size
+            end = start + page_size
+            return {
+                "pagination": {
+                    "total_items": total,
+                    "total_pages": (total + page_size - 1) // page_size,
+                    "current_page": page,
+                    "page_size": page_size,
+                    "has_next": end < total,
+                    "has_previous": page > 1
+                },
+                "results": merged_ports[start:end]
+            }
+        # Nếu không phải port-scan chia nhỏ, trả về như cũ (lấy kết quả sub-job này, phân trang)
+        scan_results = db.query(ScanResult).filter(
+            ScanResult.scan_metadata.op('->>')('job_id') == sub_job_id
+        ).all()
+        total = len(scan_results)
+        start = (page - 1) * page_size
+        end = start + page_size
+        results = []
+        for r in scan_results[start:end]:
+            result = {
+                "target": r.target,
+                "resolved_ips": r.resolved_ips,
+                "open_ports": r.open_ports,
+                "scan_metadata": r.scan_metadata
+            }
+            results.append(result)
+        return {
+            "pagination": {
+                "total_items": total,
+                "total_pages": (total + page_size - 1) // page_size,
+                "current_page": page,
+                "page_size": page_size,
+                "has_next": end < total,
+                "has_previous": page > 1
+            },
+            "results": results
+        }

@@ -336,17 +336,25 @@ class WorkflowService:
                     if port_option == "top-1000":
                         port_list = parse_nmap_top_ports(os.path.join(base_dir, "../../data/nmap-ports-top1000.txt"))
                     elif port_option == "all":
-                        port_list = parse_ports_all(os.path.join(base_dir, "../../data/Ports-1-To-65535.txt"))
+                        port_list = list(range(1, 65536))
                     else:
                         port_list = parse_ports_custom(port_option)
                     port_chunks = split_ports(port_list, int(scanner_count))
+                    def chunk_to_range(chunk):
+                        if not chunk:
+                            return ""
+                        # Nếu liên tục thì trả về "start-end", nếu không thì trả về list
+                        if chunk == list(range(chunk[0], chunk[-1]+1)):
+                            return f"{chunk[0]}-{chunk[-1]}"
+                        else:
+                            return ",".join(str(p) for p in chunk)
                     for idx, chunk in enumerate(port_chunks):
                         if not chunk:
                             continue
                         step_counter += 1
                         job_id = f"scan-port-scan-{uuid4().hex[:6]}"
                         chunk_params = params.copy()
-                        chunk_params["ports"] = ",".join(str(p) for p in chunk)
+                        chunk_params["ports"] = chunk_to_range(chunk)
                         chunk_vpn = vpn_profiles[idx] if idx < len(vpn_profiles) else None
                         job_obj = ScanJob(
                             job_id=job_id,
@@ -361,6 +369,7 @@ class WorkflowService:
                         )
                         job = crud_scan_job.create(self.db, job_obj=job_obj)
                         sub_jobs_to_create.append(job)
+                        logger.info(f"Created port-scan sub-job {job_id} chunk {idx+1}/{scanner_count} with VPN {chunk_vpn} ports {chunk_params['ports']}")
                     continue  # skip default logic for this step
             # --- Default logic for all other tools (và port-scan không chia nhỏ) ---
             step_counter += 1

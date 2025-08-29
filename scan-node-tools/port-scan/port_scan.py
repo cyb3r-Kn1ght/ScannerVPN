@@ -18,11 +18,13 @@ def scan(target, options=None):
     full_scan_timeout = 900
     # Allow override via options or env
     if options:
+        # Nếu có 'ports' thì ưu tiên, kể cả khi all_ports=true
         if options.get("ports"):
             ports = options["ports"]
         if options.get("scan_type"):
             scan_type = options["scan_type"]
-        if options.get("all_ports"):
+        # Nếu all_ports=true nhưng không có 'ports', mới quét all
+        if options.get("all_ports") and not options.get("ports"):
             ports = "-"  # scan all ports
         if options.get("timeout"):
             try:
@@ -45,12 +47,16 @@ def scan(target, options=None):
     timeout = full_scan_timeout if ports == "-" else default_timeout
     try:
         # Thử scan type được chỉ định (cần root cho SYN scan)
+        # Nếu ports là dạng range (vd: '1-5000'), hoặc list, hoặc chuỗi số, đều truyền đúng cho nmap
         if ports == "-":
             cmd = ['nmap', scan_type, '-p-', '-oX', temp_path, target]
         elif ports.isdigit():
             cmd = ['nmap', scan_type, '--top-ports', ports, '-oX', temp_path, target]
+        elif '-' in str(ports) and all(x.isdigit() for x in str(ports).replace('-',',').split(',')):
+            # Nếu là range, truyền nguyên cho nmap
+            cmd = ['nmap', scan_type, '-p', str(ports), '-oX', temp_path, target]
         else:
-            cmd = ['nmap', scan_type, '-p', ports, '-oX', temp_path, target]
+            cmd = ['nmap', scan_type, '-p', str(ports), '-oX', temp_path, target]
         print(f"[*] Running nmap command: {' '.join(cmd)} (timeout={timeout}s)")
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -61,8 +67,10 @@ def scan(target, options=None):
                 cmd = ['nmap', '-sT', '-p-', '-oX', temp_path, target]
             elif ports.isdigit():
                 cmd = ['nmap', '-sT', '--top-ports', ports, '-oX', temp_path, target]
+            elif '-' in str(ports) and all(x.isdigit() for x in str(ports).replace('-',',').split(',')):
+                cmd = ['nmap', '-sT', '-p', str(ports), '-oX', temp_path, target]
             else:
-                cmd = ['nmap', '-sT', '-p', ports, '-oX', temp_path, target]
+                cmd = ['nmap', '-sT', '-p', str(ports), '-oX', temp_path, target]
             print(f"[*] Running fallback nmap command: {' '.join(cmd)} (timeout={timeout}s)")
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -81,8 +89,10 @@ def scan(target, options=None):
                 cmd = ['nmap', '-sT', '-p-', '-oX', temp_path, target]
             elif ports.isdigit():
                 cmd = ['nmap', '-sT', '--top-ports', ports, '-oX', temp_path, target]
+            elif '-' in str(ports) and all(x.isdigit() for x in str(ports).replace('-',',').split(',')):
+                cmd = ['nmap', '-sT', '-p', str(ports), '-oX', temp_path, target]
             else:
-                cmd = ['nmap', '-sT', '-p', ports, '-oX', temp_path, target]
+                cmd = ['nmap', '-sT', '-p', str(ports), '-oX', temp_path, target]
             print(f"[*] Running fallback nmap command: {' '.join(cmd)} (timeout={timeout}s)")
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
         except subprocess.TimeoutExpired:

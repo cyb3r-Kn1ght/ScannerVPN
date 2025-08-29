@@ -1,11 +1,23 @@
-# app/api/endpoints/scan_results.py
-from fastapi import APIRouter, Depends, Query, status
+# Thêm endpoint: GET /api/sub_jobs/{sub_job_id}/results
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from typing import Optional
 from app.schemas import scan_result
 from app.services.result_service import ResultService
-from app.api.deps import get_result_service
+from app.api.deps import get_result_service, get_db
+from sqlalchemy.orm import Session
 
 router = APIRouter()
+
+# Thêm endpoint: GET /api/sub_jobs/{sub_job_id}/results
+@router.get("/api/sub_jobs/{sub_job_id}/results", summary="Lấy kết quả của sub-job, tự động merge nếu là port-scan chia nhỏ")
+def get_sub_job_results(
+        sub_job_id: str,
+        page: int = Query(1, ge=1),
+        page_size: int = Query(10, ge=1, le=100),
+        result_service: ResultService = Depends(get_result_service),
+        db: Session = Depends(get_db)
+):
+        return result_service.get_sub_job_results(sub_job_id=sub_job_id, page=page, page_size=page_size, db=db)
 
 # Giữ nguyên endpoint gốc: POST /api/scan_results
 @router.post("/api/scan_results", status_code=status.HTTP_204_NO_CONTENT, summary="Callback để scanner-node gửi kết quả về")

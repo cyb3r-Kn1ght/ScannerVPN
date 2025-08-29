@@ -4,12 +4,12 @@ WORKDIR /app
 
 # Copy requirements và các file cấu hình vào trước
 # THAY ĐỔI Ở ĐÂY: Thêm "data/" vào trước tên các file .txt
-COPY requirements.txt tools.yaml data/nmap-ports-top1000.txt data/Ports-1-To-65535.txt ./
+COPY requirements.txt tools.yaml ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy toàn bộ nội dung thư mục 'app' vào WORKDIR (/app)
 COPY ./app ./app
-
+COPY data ./data
 # Tạo thư mục /data để chứa SQLite file
 RUN mkdir -p /data
 

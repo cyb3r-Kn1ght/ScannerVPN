@@ -6,7 +6,7 @@ import time
 import sys
 
 class VPNManager:
-    def __init__(self, proxy_node="http://10.102.199.36:8000"):
+    def __init__(self, proxy_node="http://10.102.199.221:8000"):
         self.proxy_node = proxy_node
         self.vpn_process = None
         

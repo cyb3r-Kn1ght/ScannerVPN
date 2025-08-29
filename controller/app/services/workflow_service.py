@@ -17,6 +17,55 @@ from app.services.scan_submission_service import ScanSubmissionService
 logger = logging.getLogger(__name__)
 
 class WorkflowService:
+    def get_workflow_status(self, workflow_id: str):
+        db: Session = self.db
+        workflow = db.query(WorkflowJob).filter(WorkflowJob.workflow_id == workflow_id).first()
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        # Get sub-jobs
+        sub_jobs = db.query(ScanJob).filter(
+            ScanJob.workflow_id == workflow_id
+        ).order_by(ScanJob.step_order).all()
+
+        sub_job_list = []
+        for job in sub_jobs:
+            job_dict = {
+                "job_id": job.job_id,
+                "tool": job.tool,
+                "status": job.status,
+                "step_order": job.step_order
+            }
+            if getattr(job, "error_message", None):
+                job_dict["error_message"] = job.error_message
+            sub_job_list.append(job_dict)
+
+        # Progress calculation
+        completed = sum(1 for job in sub_jobs if job.status == "completed")
+        failed = sum(1 for job in sub_jobs if job.status == "failed")
+        total = getattr(workflow, "total_steps", None) or len(sub_jobs)
+        percentage = ((completed + failed) / total * 100) if total > 0 else 0
+
+        # Compose workflow info
+        workflow_info = {
+            "workflow_id": workflow.workflow_id,
+            "status": workflow.status,
+            "updated_at": getattr(workflow, "updated_at", None) or getattr(workflow, "timestamp", None),
+            "created_at": getattr(workflow, "created_at", None) or getattr(workflow, "timestamp", None),
+            "targets": getattr(workflow, "targets", []),
+            "vpn": getattr(workflow, "vpn_country", None) or getattr(workflow, "vpn_profile", None)
+        }
+
+        return {
+            "workflow": workflow_info,
+            "sub_jobs": sub_job_list,
+            "progress": {
+                "completed": completed,
+                "total": total,
+                "failed": failed,
+                "percentage": percentage
+            }
+        }
 
     def get_workflow_detail(self, workflow_id: str) -> dict:
         """Lấy chi tiết workflow, sub-jobs, tổng hợp kết quả từng tool (giống code cũ)."""

@@ -54,3 +54,11 @@ def delete_workflow(
         workflow_service: WorkflowService = Depends(get_workflow_service)
 ):
     return workflow_service.delete_workflow(workflow_id=workflow_id)
+
+# Thêm endpoint: GET /api/workflows/{workflow_id}/status
+@router.get("/api/workflows/{workflow_id}/status", summary="Lấy trạng thái hiện tại của workflow, bao gồm sub-jobs, progress, target, vpn, thời gian tạo")
+def get_workflow_status(
+    workflow_id: str,
+    workflow_service: WorkflowService = Depends(get_workflow_service)
+):
+    return workflow_service.get_workflow_status(workflow_id=workflow_id)

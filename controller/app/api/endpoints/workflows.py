@@ -10,7 +10,7 @@ from app.api.deps import get_workflow_service, get_result_service, get_db
 router = APIRouter()
 
 # Giữ nguyên endpoint gốc: POST /api/scan/workflow
-@router.post("/api/scan/workflow1", status_code=201, summary="Tạo và bắt đầu một workflow quét mới")
+@router.post("/api/workflow", status_code=201, summary="Tạo và bắt đầu một workflow quét mới")
 async def create_workflow(
         *,
         workflow_in: workflow.WorkflowRequest,

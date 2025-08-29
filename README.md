@@ -47,72 +47,114 @@
 
 ## 🧩 3. Tham số hợp lệ cho từng tool (theo /api/tools)
 
-Ví dụ response `/api/tools`:
+### Cách truyền tham số chung và riêng cho từng tool
 
-```json
-[
-	{
-		"name": "port-scan",
-		"parameters": [
-			{"name": "target", "type": "str", "required": true, "desc": "IP/domain cần quét"},
-			{"name": "ports", "type": "str", "required": false, "desc": "Danh sách port, ví dụ: 80,443,8080"},
-			{"name": "all_ports", "type": "bool", "required": false, "desc": "Quét toàn bộ port"},
-			{"name": "top_ports", "type": "int", "required": false, "desc": "Quét top N port phổ biến"},
-			{"name": "vpn_profile", "type": "str", "required": false, "desc": "VPN profile sử dụng"}
-		]
-	},
-	{
-		"name": "httpx",
-		"parameters": [
-			{"name": "target", "type": "str", "required": true, "desc": "IP/domain cần quét"},
-			{"name": "ports", "type": "str", "required": false, "desc": "Danh sách port"},
-			{"name": "vpn_profile", "type": "str", "required": false, "desc": "VPN profile sử dụng"}
-		]
-	}
-	// ...
-]
-```
+- **vpn_profile** có thể truyền ở ngoài (áp dụng cho toàn bộ workflow, tất cả các tool sẽ dùng VPN này nếu không chỉ định riêng).
+- **port-scan** hỗ trợ truyền `vpn_profile` là một mảng bên trong params để chỉ định VPN cho từng scanner con (shard), ví dụ:
+  ```json
+  {
+    "tool_id": "port-scan",
+    "params": {
+      "vpn_profile": ["vpn1.ovpn", "vpn2.ovpn", ...],
+      ...
+    }
+  }
+  ```
+- Các tool khác sẽ ưu tiên vpn_profile trong params nếu có, nếu không sẽ lấy ở ngoài workflow.
+
+### Bảng tham số hợp lệ từng tool
+
+| Tool             | Tham số hợp lệ                                                                                                                         |
+|------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| **httpx-scan**   | follow_redirects (bool), include_response (bool), timeout (int), retries (int), ports (str), status_code (bool), title (bool), ip (bool), web_server (bool), content_length (bool), tech_detect (bool) |
+| **port-scan**    | all_ports (bool), ports (str), scan_type (str), scanner_count (int), vpn_profile (str/list, riêng từng shard), ...                     |
+| **nuclei-scan**  | severity (list), templates (list)                                                                                                      |
+| **wpscan-scan**  | enumerate (list), api_key (str)                                                                                                        |
+| **dns-lookup**   | (không bắt buộc tham số, có thể truyền rỗng)                                                                                           |
+| **dirsearch-scan**| extensions (str), threads (int), recursive (bool), include_status (str), no_extensions (bool)                                         |
+
 > Để lấy danh sách tham số hợp lệ mới nhất, luôn gọi `GET /api/tools`.
 
 ---
 
 ## 📝 4. Ví dụ sử dụng API
 
-### 4.1. Tạo workflow phức tạp
-```json
-POST /api/workflow
-{
-	"name": "Example Workflow",
-	"steps": [
-		{
-			"tool": "port-scan",
-			"parameters": {
-				"target": "example.com",
-				"top_ports": 100
-			}
-		},
-		{
-			"tool": "httpx",
-			"parameters": {
-				"target": "example.com"
-			}
-		}
-	]
-}
+### Ví dụ tạo workflow với tất cả tool và đủ tham số hợp lệ
+
+```bash
+curl -X POST http://10.102.199.42:8000/api/workflow \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targets": ["demo.testfire.net"],
+    "vpn_profile": "103.57.130.113.ovpn",
+    "steps": [
+      {
+        "tool_id": "httpx-scan",
+        "params": {
+          "follow_redirects": true,
+          "include_response": true,
+          "timeout": 15,
+          "retries": 2,
+          "ports": "80,443,8080",
+          "status_code": true,
+          "title": true,
+          "ip": true,
+          "web_server": true,
+          "content_length": true,
+          "tech_detect": true
+        }
+      },
+      {
+        "tool_id": "port-scan",
+        "params": {
+          "all_ports": true,
+          "ports": "all",
+          "scan_type": "-sS",
+          "scanner_count": 5,
+          "vpn_profile": [
+            "70.36.97.79.ovpn",
+            "vpngate_42.115.224.83_udp_1457.ovpn",
+            "vpngate_42.115.224.83_tcp_1416.ovpn",
+            "103.57.130.113.ovpn",
+            "vpngate_121.139.214.237_tcp_1961.ovpn"
+          ]
+        }
+      },
+      {
+        "tool_id": "nuclei-scan",
+        "params": {
+          "severity": ["info", "low"],
+          "templates": ["cves", "default-logins", "exposed-panels", "vulnerabilities"]
+        }
+      },
+      {
+        "tool_id": "wpscan-scan",
+        "params": {
+          "enumerate": ["p", "t", "u"],
+          "api_key": "OyiwPdiO9VJhjMOqL6PoWAPC3EpA88mvoowwOASINhO"
+        }
+      },
+      {
+        "tool_id": "dns-lookup",
+        "params": {}
+      },
+      {
+        "tool_id": "dirsearch-scan",
+        "params": {
+          "extensions": "php,asp,aspx",
+          "threads": 10,
+          "recursive": true,
+          "include_status": "200,204",
+          "no_extensions": false
+        }
+      }
+    ]
+  }'
 ```
 
-### 4.2. Tạo job quét port-scan đơn lẻ
-```json
-POST /api/scan/port-scan
-{
-	"target": "example.com",
-	"top_ports": 100
-}
-```
-
-### 4.3. Lấy kết quả sub-job port-scan
-```
-GET /api/sub_jobs/{sub_job_id}/results
+### Lấy kết quả sub-job bất kỳ
+```bash
+curl http://10.102.199.42:8000/api/sub_jobs/{sub_job_id}/results
 ```
 
 ---

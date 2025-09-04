@@ -110,7 +110,7 @@ def _create_job(req: ScanRequest):
         image=f"{REGISTRY}/{req.tool}:latest",
         args=req.targets,
         env=env_vars,
-        image_pull_policy="Never",
+        image_pull_policy="Always",
         security_context=client.V1SecurityContext(
             privileged=True,
             capabilities=client.V1Capabilities(
@@ -137,7 +137,8 @@ def _create_job(req: ScanRequest):
                         type="CharDevice"
                     )
                 )
-            ]
+            ],
+            node_selector={"kubernetes.io/hostname": "proxynode"}
         )
     )
     job_spec = client.V1JobSpec(

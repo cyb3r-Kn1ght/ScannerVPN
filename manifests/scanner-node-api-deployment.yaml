@@ -15,11 +15,13 @@ spec:
       labels:
         app: scanner-node-api
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: ubuntu
       serviceAccountName: scanner-node-sa
       containers:
         - name: scanner-node-api
           image: nguyenminhnguyen/scanner-node-api:latest
-          imagePullPolicy: Never
+          imagePullPolicy: Always
           env:
           - name: REGISTRY
             value: nguyenminhnguyen

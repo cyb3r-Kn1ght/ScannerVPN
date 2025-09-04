@@ -17,7 +17,7 @@ spec:
       containers:
       - name: controller
         image: nguyenminhnguyen/controller:latest
-        imagePullPolicy: Never
+        imagePullPolicy: Always
         env:
         - name: DATABASE_URL
           value: sqlite:////data/scan_results.db

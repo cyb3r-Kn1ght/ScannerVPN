@@ -1,5 +1,6 @@
 # Makefile for Scanner Node + Tools
 # For VM2 (Kali - 10.102.199.37)
+# sudo kubeadm init --pod-network-cidr=10.244.0.0/16
 
 .PHONY: help build-scanner build-tools build-all push deploy logs clean test health rebuild port-forward-external port-forward-external-bg test-external logs-jobs status clean-jobs
 
@@ -58,6 +59,7 @@ push: build-all
 
 deploy:
 	@echo "🚀 Deploying Scanner Node to Kubernetes..."
+	kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
 	kubectl apply -f ../manifests/namespace.yaml
 	kubectl apply -f ../manifests/scanner-node-rbac.yaml
 	kubectl apply -f ../manifests/scanner-node-api-deployment.yaml

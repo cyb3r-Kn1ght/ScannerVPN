@@ -22,3 +22,7 @@ tools:
   - name: dirsearch-scan
     image: nguyenminhnguyen/dirsearch-scan:latest
     args: ["--url"]
+
+  - name: sqlmap-scan
+    image: nguyenminhnguyen/sqlmap-scan:latest # Giả sử bạn đã build và push image này
+    args: ["--url"]

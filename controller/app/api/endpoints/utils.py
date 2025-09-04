@@ -90,6 +90,29 @@ def list_supported_tools():
             "id": "dns-lookup",
             "name": "Phân giải DNS",
             "fields": []
+        },
+                {
+            "id": "sqlmap-scan",
+            "name": "Quét SQL Injection (SQLMap)",
+            "description": "Tự động phát hiện và khai thác các lỗ hổng SQL injection.",
+            "fields": [
+                {"name": "threads", "label": "Số luồng (threads)", "component": "NumberInput", "defaultValue": 1},
+                {"name": "level", "label": "Mức độ kiểm tra (Level)", "component": "Select", "defaultValue": 1, "data": [
+                    {"value": 1, "label": "1 - Cơ bản"},
+                    {"value": 2, "label": "2 - Trung bình"},
+                    {"value": 3, "label": "3 - Nâng cao"},
+                    {"value": 4, "label": "4 - Toàn diện"},
+                    {"value": 5, "label": "5 - Chuyên sâu"}
+                ]},
+                {"name": "risk", "label": "Mức độ rủi ro (Risk)", "component": "Select", "defaultValue": 1, "data": [
+                    {"value": 1, "label": "1 - Thấp"},
+                    {"value": 2, "label": "2 - Trung bình"},
+                    {"value": 3, "label": "3 - Cao"}
+                ]},
+                {"name": "technique", "label": "Kỹ thuật tấn công", "component": "TextInput", "placeholder": "vd: BEUS (Boolean, Error, Union, Stacked)"},
+                {"name": "dbms", "label": "Chỉ định DBMS", "component": "TextInput", "placeholder": "vd: MySQL, PostgreSQL"},
+                {"name": "batch", "label": "Chạy tự động (batch mode)", "component": "Switch", "defaultValue": True}
+            ]
         }
     ]
     logger.info(f"API call to /api/tools, returning {len(frontend_tools)} tools (dashboard format)")

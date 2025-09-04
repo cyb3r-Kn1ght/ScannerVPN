@@ -26,3 +26,7 @@ tools:
   - name: sqlmap-scan
     image: nguyenminhnguyen/sqlmap-scan:latest # Giả sử bạn đã build và push image này
     args: ["--url"]
+
+  - name: bruteforce-scan
+    image: nguyenminhnguyen/bruteforce:latest
+    args: [] # Bruteforce tool đọc job từ stdin, không cần args

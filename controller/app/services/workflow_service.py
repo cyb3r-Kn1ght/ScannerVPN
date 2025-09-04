@@ -182,6 +182,11 @@ class WorkflowService:
             meta = r.scan_metadata or {}
             # Kết quả từ sqlmap_scan.py được lưu trong 'sqlmap_results'
             return meta.get("sqlmap_results") or []
+        
+        def bruteforce_flatten(r):
+            meta = r.scan_metadata or {}
+            # Kết quả từ bf_runner.py được lưu trong key 'findings'
+            return meta.get("findings") or []
 
         tool_result_map = {
             "nuclei-scan": lambda r: [nuclei_flatten(f) for f in (r.scan_metadata.get("nuclei_results") or [])],
@@ -191,6 +196,7 @@ class WorkflowService:
             "dirsearch-scan": dirsearch_flatten,
             "wpscan-scan": wpscan_flatten,
             "sqlmap-scan": sqlmap_flatten,
+            "bruteforce-scan": bruteforce_flatten
         }
 
         sub_job_details = []

@@ -91,7 +91,7 @@ def list_supported_tools():
             "name": "Phân giải DNS",
             "fields": []
         },
-                {
+        {
             "id": "sqlmap-scan",
             "name": "Quét SQL Injection (SQLMap)",
             "description": "Tự động phát hiện và khai thác các lỗ hổng SQL injection.",
@@ -112,6 +112,28 @@ def list_supported_tools():
                 {"name": "technique", "label": "Kỹ thuật tấn công", "component": "TextInput", "placeholder": "vd: BEUS (Boolean, Error, Union, Stacked)"},
                 {"name": "dbms", "label": "Chỉ định DBMS", "component": "TextInput", "placeholder": "vd: MySQL, PostgreSQL"},
                 {"name": "batch", "label": "Chạy tự động (batch mode)", "component": "Switch", "defaultValue": True}
+            ]
+        },
+        {
+            "id": "bruteforce-scan",
+            "name": "Dò mật khẩu (Bruteforce)",
+            "description": "Thực hiện tấn công dò mật khẩu vào các dịch vụ HTTP, SSH, FTP.",
+            "fields": [
+                {
+                    "name": "strategy", 
+                    "label": "Chiến lược tấn công", 
+                    "component": "Select", 
+                    "defaultValue": "dictionary",
+                    "data": [
+                        {"value": "dictionary", "label": "Dictionary (Một user - nhiều pass)"},
+                        {"value": "spray", "label": "Password Spraying (Một pass - nhiều user)"},
+                        {"value": "stuffing", "label": "Credential Stuffing (Cặp user:pass)"}
+                    ]
+                },
+                {"name": "concurrency", "label": "Số luồng (concurrency)", "component": "NumberInput", "defaultValue": 2},
+                {"name": "users_list", "label": "Danh sách Username", "component": "Textarea", "placeholder": "Nhập mỗi username một dòng..."},
+                {"name": "passwords_list", "label": "Danh sách Password", "component": "Textarea", "placeholder": "Nhập mỗi password một dòng..."},
+                {"name": "pairs_list", "label": "Danh sách cặp User:Pass", "component": "Textarea", "placeholder": "Nhập mỗi cặp user:pass một dòng..."}
             ]
         }
     ]

@@ -19,7 +19,7 @@ spec:
       containers:
         - name: scanner-node-api
           image: nguyenminhnguyen/scanner-node-api:latest
-          imagePullPolicy: Always
+          imagePullPolicy: Never
           env:
           - name: REGISTRY
             value: nguyenminhnguyen

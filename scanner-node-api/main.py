@@ -110,7 +110,7 @@ def _create_job(req: ScanRequest):
         image=f"{REGISTRY}/{req.tool}:latest",
         args=req.targets,
         env=env_vars,
-        image_pull_policy="Always",
+        image_pull_policy="Never",
         security_context=client.V1SecurityContext(
             privileged=True,
             capabilities=client.V1Capabilities(

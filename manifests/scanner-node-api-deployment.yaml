@@ -15,8 +15,6 @@ spec:
       labels:
         app: scanner-node-api
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: ubuntu
       serviceAccountName: scanner-node-sa
       containers:
         - name: scanner-node-api

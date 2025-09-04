@@ -137,8 +137,7 @@ def _create_job(req: ScanRequest):
                         type="CharDevice"
                     )
                 )
-            ],
-            node_selector={"kubernetes.io/hostname": "proxynode"}
+            ]
         )
     )
     job_spec = client.V1JobSpec(

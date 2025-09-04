@@ -59,7 +59,6 @@ push: build-all
 
 deploy:
 	@echo "🚀 Deploying Scanner Node to Kubernetes..."
-	kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
 	kubectl apply -f ../manifests/namespace.yaml
 	kubectl apply -f ../manifests/scanner-node-rbac.yaml
 	kubectl apply -f ../manifests/scanner-node-api-deployment.yaml

@@ -52,7 +52,75 @@ if __name__ == "__main__":
         print("[*] Checking initial network status...")
         initial_info = vpn_manager.get_network_info()
         print(f"[*] Initial IP: {initial_info['public_ip']}")
-        # ...existing VPN setup code...
+        if assigned_vpn:
+            if vpn_manager.setup_specific_vpn(assigned_vpn):
+                print(f"[+] Connected to assigned VPN: {assigned_vpn.get('hostname', 'Unknown')}")
+                vpn_manager.print_vpn_status()
+                network_info = vpn_manager.get_network_info()
+                vpn_connected = True
+                # Notify controller: connect
+                if controller_url and vpn_profile_info:
+                    try:
+                        job_id = os.getenv("JOB_ID")
+                        payload = {
+                            "filename": vpn_profile_info.get("filename"),
+                            "action": "connect",
+                            "scanner_id": job_id
+                        }
+                        print(f"[+] Notify controller: connect {payload}")
+                        resp = requests.post(f"{controller_url}/api/vpn_profiles/update", json=payload, timeout=10)
+                        print(f"[+] Controller connect response: {resp.status_code}")
+                    except Exception as notify_err:
+                        print(f"[!] Failed to notify controller connect: {notify_err}")
+            else:
+                print("[!] Failed to connect to assigned VPN, trying random...")
+                if vpn_manager.setup_random_vpn():
+                    print("[+] Connected to random VPN as fallback!")
+                    vpn_manager.print_vpn_status()
+                    network_info = vpn_manager.get_network_info()
+                    vpn_connected = True
+                    # Notify controller: connect (random)
+                    vpn_profile_info = {
+                        "filename": network_info.get("vpn_filename", "random"),
+                        "hostname": network_info.get("vpn_hostname", "random")
+                    }
+                    if controller_url and vpn_profile_info:
+                        try:
+                            job_id = os.getenv("JOB_ID")
+                            payload = {
+                                "filename": vpn_profile_info.get("filename"),
+                                "action": "connect",
+                                "scanner_id": job_id
+                            }
+                            print(f"[+] Notify controller: connect {payload}")
+                            resp = requests.post(f"{controller_url}/api/vpn_profiles/update", json=payload, timeout=10)
+                            print(f"[+] Controller connect response: {resp.status_code}")
+                        except Exception as notify_err:
+                            print(f"[!] Failed to notify controller connect: {notify_err}")
+        else:
+            print("[*] No VPN assignment from Controller, using random VPN...")
+            if vpn_manager.setup_random_vpn():
+                print("[+] VPN setup completed!")
+                vpn_manager.print_vpn_status()
+                network_info = vpn_manager.get_network_info()
+                vpn_connected = True
+                vpn_profile_info = {
+                    "filename": network_info.get("vpn_filename", "random"),
+                    "hostname": network_info.get("vpn_hostname", "random")
+                }
+                if controller_url and vpn_profile_info:
+                    try:
+                        job_id = os.getenv("JOB_ID")
+                        payload = {
+                            "filename": vpn_profile_info.get("filename"),
+                            "action": "connect",
+                            "scanner_id": job_id
+                        }
+                        print(f"[+] Notify controller: connect {payload}")
+                        resp = requests.post(f"{controller_url}/api/vpn_profiles/update", json=payload, timeout=10)
+                        print(f"[+] Controller connect response: {resp.status_code}")
+                    except Exception as notify_err:
+                        print(f"[!] Failed to notify controller connect: {notify_err}")
 
         # --- Robust argument handling: convert positional/ENV targets to --url/--url-file ---
         targets_env = os.getenv("TARGETS", "").split(",") if os.getenv("TARGETS") else []
@@ -257,6 +325,10 @@ if args.wordlist:
     base_cmd += ["-w", args.wordlist]
 if args.include_status:
     base_cmd += ["-i", args.include_status]
+            # Prepare set of allowed status codes for post-filtering
+    allowed_status = set(int(s.strip()) for s in args.include_status.split(",") if s.strip().isdigit())
+else:
+    allowed_status = set()
 if args.extensions and not args.no_extensions:
     base_cmd += ["-e", args.extensions]
 
@@ -301,22 +373,24 @@ else:
     )
 
     with open(out, "r", encoding="utf-8", errors="ignore") as fh:
-        for line in fh:
-            m = pat.search(line)
-            if not m:
-                continue
-            code = int(m.group("code"))
-            url  = m.group("url").rstrip(",);")
-            size = (m.group("size") or "").strip()
-            red  = m.group("redirect")
-            if red:
-                red = red.rstrip(",);")
-            item = {"status": code, "url": url}
-            if size:
-                item["size"] = size
-            if red:
-                item["redirect_to"] = red
-            findings.append(item)
+                for line in fh:
+                    m = pat.search(line)
+                    if not m:
+                        continue
+                    code = int(m.group("code"))
+                    if allowed_status and code not in allowed_status:
+                        continue
+                    url  = m.group("url").rstrip(",);")
+                    size = (m.group("size") or "").strip()
+                    red  = m.group("redirect")
+                    if red:
+                        red = red.rstrip(",);")
+                    item = {"status": code, "url": url}
+                    if size:
+                        item["size"] = size
+                    if red:
+                        item["redirect_to"] = red
+                    findings.append(item)
 
     print(json.dumps({"findings": findings}, ensure_ascii=False))
 

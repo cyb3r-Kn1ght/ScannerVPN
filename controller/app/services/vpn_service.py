@@ -7,6 +7,9 @@ from app.core.config import settings # <--- Thêm import này
 
 
 class VPNService:
+    def get_available_vpn_profiles(self) -> List[Dict]:
+        """Trả về danh sách VPN chưa bị sử dụng (hiện tại trả về toàn bộ)."""
+        return self.fetch_vpns_sync()
     """
     VPN Service cho Controller.
     

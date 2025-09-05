@@ -335,194 +335,179 @@ class WorkflowService:
         sub_jobs_to_create = []
         step_counter = 0
 
-        for i, step in enumerate(steps):
-            # --- Custom logic for port-scan sharding ---
-            if step.tool_id == "port-scan":
-                params = step.params.copy() if step.params else {}
-                scanner_count = params.get("scanner_count")
-                vpn_profiles = params.get("vpn_profile")
-                port_option = params.get("ports")
-                # Nếu có scanner_count > 1 và vpn_profile là mảng, chia nhỏ sub-job
-                if isinstance(vpn_profiles, list) and scanner_count and int(scanner_count) > 1:
-                    base_dir = os.path.dirname(os.path.abspath(__file__))
-                    if port_option == "top-1000":
-                        port_list = parse_nmap_top_ports(os.path.join(base_dir, "../../data/nmap-ports-top1000.txt"))
-                    elif port_option == "all":
-                        port_list = list(range(1, 65536))
-                    else:
-                        port_list = parse_ports_custom(port_option)
-                    port_chunks = split_ports(port_list, int(scanner_count))
-                    def chunk_to_range(chunk):
-                        if not chunk:
-                            return ""
-                        # Nếu liên tục thì trả về "start-end", nếu không thì trả về list
-                        if chunk == list(range(chunk[0], chunk[-1]+1)):
-                            return f"{chunk[0]}-{chunk[-1]}"
+        try:
+            for i, step in enumerate(steps):
+                # --- Custom logic for port-scan sharding ---
+                if step.tool_id == "port-scan":
+                    params = step.params.copy() if step.params else {}
+                    scanner_count = params.get("scanner_count")
+                    vpn_profiles = params.get("vpn_profile")
+                    port_option = params.get("ports")
+                    if isinstance(vpn_profiles, list) and scanner_count and int(scanner_count) > 1:
+                        base_dir = os.path.dirname(os.path.abspath(__file__))
+                        if port_option == "top-1000":
+                            port_list = parse_nmap_top_ports(os.path.join(base_dir, "../../data/nmap-ports-top1000.txt"))
+                        elif port_option == "all":
+                            port_list = list(range(1, 65536))
                         else:
-                            return ",".join(str(p) for p in chunk)
-                    for idx, chunk in enumerate(port_chunks):
-                        if not chunk:
+                            port_list = parse_ports_custom(port_option)
+                        port_chunks = split_ports(port_list, int(scanner_count))
+                        def chunk_to_range(chunk):
+                            if not chunk:
+                                return ""
+                            if chunk == list(range(chunk[0], chunk[-1]+1)):
+                                return f"{chunk[0]}-{chunk[-1]}"
+                            else:
+                                return ",".join(str(p) for p in chunk)
+                        for idx, chunk in enumerate(port_chunks):
+                            if not chunk:
+                                continue
+                            step_counter += 1
+                            job_id = f"scan-port-scan-{uuid4().hex[:6]}"
+                            chunk_params = params.copy()
+                            chunk_params["ports"] = chunk_to_range(chunk)
+                            chunk_vpn = vpn_profiles[idx] if idx < len(vpn_profiles) else None
+                            job_obj = ScanJob(
+                                job_id=job_id,
+                                tool=step.tool_id,
+                                targets=workflow_db.targets,
+                                options=chunk_params,
+                                workflow_id=workflow_db.workflow_id,
+                                step_order=step_counter,
+                                vpn_profile=chunk_vpn,
+                                vpn_country=getattr(workflow_db, "vpn_country", None),
+                                vpn_assignment=None
+                            )
+                            job = crud_scan_job.create(self.db, job_obj=job_obj)
+                            sub_jobs_to_create.append(job)
+                            logger.info(f"Created port-scan sub-job {job_id} chunk {idx+1}/{scanner_count} with VPN {chunk_vpn} ports {chunk_params['ports']}" )
+                        continue
+                if step.tool_id == "nuclei-scan":
+                    params = step.params.copy() if step.params else {}
+                    distributed = params.get("distributed-scanning", False)
+                    if str(distributed).lower() == "true":
+                        templates = params.get("templates", [])
+                        severity = params.get("severity", [])
+                        if not templates or not severity:
+                            pass
+                        else:
+                            from app.services.vpn_service import VPNService
+                            vpn_service = VPNService()
+                            available_vpns = vpn_service.get_available_vpn_profiles()
+                            vpn_idx = 0
+                            for t in templates:
+                                for s in severity:
+                                    step_counter += 1
+                                    job_id = f"scan-nuclei-scan-{uuid4().hex[:6]}"
+                                    job_params = {k: v for k, v in params.items() if k not in ["templates", "severity", "distributed-scanning"]}
+                                    job_params["templates"] = [t]
+                                    job_params["severity"] = [s]
+                                    job_params["distributed-scanning"] = True
+                                    if available_vpns and vpn_idx < len(available_vpns):
+                                        job_vpn = available_vpns[vpn_idx]
+                                        vpn_idx += 1
+                                    else:
+                                        job_vpn = available_vpns[vpn_idx % len(available_vpns)] if available_vpns else None
+                                    import json
+                                    job_obj = ScanJob(
+                                        job_id=job_id,
+                                        tool=step.tool_id,
+                                        targets=workflow_db.targets,
+                                        options=job_params,
+                                        workflow_id=workflow_db.workflow_id,
+                                        step_order=step_counter,
+                                        vpn_profile=json.dumps(job_vpn) if isinstance(job_vpn, dict) else job_vpn,
+                                        vpn_country=getattr(workflow_db, "vpn_country", None),
+                                        vpn_assignment=None
+                                    )
+                                    job = crud_scan_job.create(self.db, job_obj=job_obj)
+                                    sub_jobs_to_create.append(job)
+                                    logger.info(f"Created nuclei-scan sub-job {job_id} template {t} severity {s} VPN {job_vpn}")
                             continue
+                step_counter += 1
+                job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
+                step_params = step.params.copy() if step.params else {}
+                if step.tool_id == "dirsearch-scan" and isinstance(step_params, dict):
+                    if "threads" in step_params:
+                        try:
+                            step_params["threads"] = int(step_params["threads"])
+                        except Exception:
+                            step_params["threads"] = 10
+                    if "recursive" in step_params:
+                        if step.tool_id == "dirsearch-scan":
+                            params = step.params.copy() if step.params else {}
+                            scanner_count = params.get("scanner_count")
+                            try:
+                                scanner_count_int = int(scanner_count) if scanner_count is not None else None
+                            except Exception:
+                                scanner_count_int = None
+                            if scanner_count_int is None or scanner_count_int < 1:
+                                raise ValueError("Invalid or missing 'scanner_count' in dirsearch-scan step params. Must be a positive integer.")
+                            if scanner_count_int > 1:
+                                WORDLIST_LINE_COUNT = 9677
+                                lines_per_scanner = WORDLIST_LINE_COUNT // scanner_count_int
+                                remainder = WORDLIST_LINE_COUNT % scanner_count_int
+                                start_line = 0
+                                from app.services.vpn_service import VPNService
+                                vpn_service = VPNService()
+                                available_vpns = vpn_service.get_available_vpn_profiles()
+                                for idx in range(scanner_count_int):
+                                    end_line = start_line + lines_per_scanner - 1
+                                    if idx < remainder:
+                                        end_line += 1
+                                    step_counter += 1
+                                    job_id = f"scan-dirsearch-scan-{uuid4().hex[:6]}"
+                                    chunk_params = params.copy()
+                                    chunk_params["wordlist_start"] = start_line
+                                    chunk_params["wordlist_end"] = end_line
+                                    if available_vpns and idx < len(available_vpns):
+                                        chunk_vpn = available_vpns[idx]
+                                    elif available_vpns:
+                                        chunk_vpn = available_vpns[idx % len(available_vpns)]
+                                    else:
+                                        chunk_vpn = None
+                                    import json
+                                    job_obj = ScanJob(
+                                        job_id=job_id,
+                                        tool=step.tool_id,
+                                        targets=workflow_db.targets,
+                                        options=chunk_params,
+                                        workflow_id=workflow_db.workflow_id,
+                                        step_order=step_counter,
+                                        vpn_profile=json.dumps(chunk_vpn) if isinstance(chunk_vpn, dict) else chunk_vpn,
+                                        vpn_country=getattr(workflow_db, "vpn_country", None),
+                                        vpn_assignment=None
+                                    )
+                                    job = crud_scan_job.create(self.db, job_obj=job_obj)
+                                    sub_jobs_to_create.append(job)
+                                    logger.info(f"Created dirsearch-scan sub-job {job_id} chunk {idx+1}/{scanner_count_int} with VPN {chunk_vpn} lines {start_line}-{end_line}")
+                                    start_line = end_line + 1
+                                continue
+                        import json
                         step_counter += 1
-                        job_id = f"scan-port-scan-{uuid4().hex[:6]}"
-                        chunk_params = params.copy()
-                        chunk_params["ports"] = chunk_to_range(chunk)
-                        chunk_vpn = vpn_profiles[idx] if idx < len(vpn_profiles) else None
+                        job_id = f"scan-dirsearch-scan-{uuid4().hex[:6]}"
                         job_obj = ScanJob(
                             job_id=job_id,
                             tool=step.tool_id,
                             targets=workflow_db.targets,
-                            options=chunk_params,
+                            options=params,
                             workflow_id=workflow_db.workflow_id,
                             step_order=step_counter,
-                            vpn_profile=chunk_vpn,
+                            vpn_profile=json.dumps(getattr(workflow_db, "vpn_profile", None)) if isinstance(getattr(workflow_db, "vpn_profile", None), dict) else getattr(workflow_db, "vpn_profile", None),
                             vpn_country=getattr(workflow_db, "vpn_country", None),
-                            vpn_assignment=None
+                            vpn_assignment=json.dumps(vpn_assignment) if isinstance(vpn_assignment, dict) else vpn_assignment
                         )
                         job = crud_scan_job.create(self.db, job_obj=job_obj)
                         sub_jobs_to_create.append(job)
-                        logger.info(f"Created port-scan sub-job {job_id} chunk {idx+1}/{scanner_count} with VPN {chunk_vpn} ports {chunk_params['ports']}")
-                    continue  # skip default logic for this step
-                # Nếu không chia nhỏ thì dùng logic mặc định bên dưới
-
-            # --- Custom logic for nuclei-scan distributed scanning ---
-            if step.tool_id == "nuclei-scan":
-                params = step.params.copy() if step.params else {}
-                distributed = params.get("distributed-scanning", False)
-                if str(distributed).lower() == "true":
-                    templates = params.get("templates", [])
-                    severity = params.get("severity", [])
-                    if not templates or not severity:
-                        # Nếu thiếu, fallback về logic cũ
-                        pass
-                    else:
-                        # Lấy danh sách VPN profile rảnh từ DB
-                        from app.services.vpn_service import VPNService
-                        vpn_service = VPNService()
-                        available_vpns = vpn_service.get_available_vpn_profiles()  # Trả về list vpn_profile
-                        vpn_idx = 0
-                        for t in templates:
-                            for s in severity:
-                                step_counter += 1
-                                job_id = f"scan-nuclei-scan-{uuid4().hex[:6]}"
-                                job_params = {k: v for k, v in params.items() if k not in ["templates", "severity", "distributed-scanning"]}
-                                job_params["templates"] = [t]
-                                job_params["severity"] = [s]
-                                job_params["distributed-scanning"] = True
-                                # Gán VPN profile động
-                                if available_vpns and vpn_idx < len(available_vpns):
-                                    job_vpn = available_vpns[vpn_idx]
-                                    vpn_idx += 1
-                                else:
-                                    # Nếu hết VPN rảnh, dùng lại VPN đã gán cho các job trước đó
-                                    job_vpn = available_vpns[vpn_idx % len(available_vpns)] if available_vpns else None
-                                import json
-                                job_obj = ScanJob(
-                                    job_id=job_id,
-                                    tool=step.tool_id,
-                                    targets=workflow_db.targets,
-                                    options=job_params,
-                                    workflow_id=workflow_db.workflow_id,
-                                    step_order=step_counter,
-                                    vpn_profile=json.dumps(job_vpn) if isinstance(job_vpn, dict) else job_vpn,
-                                    vpn_country=getattr(workflow_db, "vpn_country", None),
-                                    vpn_assignment=None
-                                )
-                                job = crud_scan_job.create(self.db, job_obj=job_obj)
-                                sub_jobs_to_create.append(job)
-                                logger.info(f"Created nuclei-scan sub-job {job_id} template {t} severity {s} VPN {job_vpn}")
-                        continue  # skip default logic for this step
-            # --- Default logic for all other tools (và nuclei-scan không chia nhỏ) ---
-            step_counter += 1
-            job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
-            step_params = step.params.copy() if step.params else {}
-            # Nếu là dirsearch-scan, ép kiểu các trường options cho đúng
-            if step.tool_id == "dirsearch-scan" and isinstance(step_params, dict):
-                # threads: int
-                if "threads" in step_params:
-                    try:
-                        step_params["threads"] = int(step_params["threads"])
-                    except Exception:
-                        step_params["threads"] = 10
-                # recursive: bool
-                if "recursive" in step_params:
-                    # --- Custom logic for dirsearch-scan sharding by wordlist lines ---
-                    if step.tool_id == "dirsearch-scan":
-                        params = step.params.copy() if step.params else {}
-                        scanner_count = params.get("scanner_count")
-                        # Defensive check for scanner_count
-                        try:
-                            scanner_count_int = int(scanner_count) if scanner_count is not None else None
-                        except Exception:
-                            scanner_count_int = None
-                        if scanner_count_int is None or scanner_count_int < 1:
-                            raise ValueError("Invalid or missing 'scanner_count' in dirsearch-scan step params. Must be a positive integer.")
-                        # Nếu chia nhỏ (scanner_count > 1)
-                        if scanner_count_int > 1:
-                            WORDLIST_LINE_COUNT = 9677  # hardcoded
-                            lines_per_scanner = WORDLIST_LINE_COUNT // scanner_count_int
-                            remainder = WORDLIST_LINE_COUNT % scanner_count_int
-                            start_line = 0
-                            # Lấy danh sách VPN idle từ database (proxy node)
-                            from app.services.vpn_service import VPNService
-                            vpn_service = VPNService()
-                            available_vpns = vpn_service.get_available_vpn_profiles()  # Trả về list vpn_profile
-                            for idx in range(scanner_count_int):
-                                end_line = start_line + lines_per_scanner - 1
-                                if idx < remainder:
-                                    end_line += 1
-                                step_counter += 1
-                                job_id = f"scan-dirsearch-scan-{uuid4().hex[:6]}"
-                                chunk_params = params.copy()
-                                chunk_params["wordlist_start"] = start_line
-                                chunk_params["wordlist_end"] = end_line
-                                # Ưu tiên VPN idle, nếu không đủ thì dùng lại
-                                if available_vpns and idx < len(available_vpns):
-                                    chunk_vpn = available_vpns[idx]
-                                elif available_vpns:
-                                    chunk_vpn = available_vpns[idx % len(available_vpns)]
-                                else:
-                                    chunk_vpn = None
-                                import json
-                                job_obj = ScanJob(
-                                    job_id=job_id,
-                                    tool=step.tool_id,
-                                    targets=workflow_db.targets,
-                                    options=chunk_params,
-                                    workflow_id=workflow_db.workflow_id,
-                                    step_order=step_counter,
-                                    vpn_profile=json.dumps(chunk_vpn) if isinstance(chunk_vpn, dict) else chunk_vpn,
-                                    vpn_country=getattr(workflow_db, "vpn_country", None),
-                                    vpn_assignment=None
-                                )
-                                job = crud_scan_job.create(self.db, job_obj=job_obj)
-                                sub_jobs_to_create.append(job)
-                                logger.info(f"Created dirsearch-scan sub-job {job_id} chunk {idx+1}/{scanner_count_int} with VPN {chunk_vpn} lines {start_line}-{end_line}")
-                                start_line = end_line + 1
-                            continue  # skip default logic for this step
-                    # Nếu không chia nhỏ thì dùng vpn_profile từ request
-                    import json
-                    step_counter += 1
-                    job_id = f"scan-dirsearch-scan-{uuid4().hex[:6]}"
-                    job_obj = ScanJob(
-                        job_id=job_id,
-                        tool=step.tool_id,
-                        targets=workflow_db.targets,
-                        options=params,
-                        workflow_id=workflow_db.workflow_id,
-                        step_order=step_counter,
-                        vpn_profile=json.dumps(getattr(workflow_db, "vpn_profile", None)) if isinstance(getattr(workflow_db, "vpn_profile", None), dict) else getattr(workflow_db, "vpn_profile", None),
-                        vpn_country=getattr(workflow_db, "vpn_country", None),
-                        vpn_assignment=json.dumps(vpn_assignment) if isinstance(vpn_assignment, dict) else vpn_assignment
-                    )
-                    job = crud_scan_job.create(self.db, job_obj=job_obj)
-                    sub_jobs_to_create.append(job)
-                    logger.info(f"Created dirsearch-scan single job {job_id} with VPN {getattr(workflow_db, 'vpn_profile', None)}")
-                    continue  # skip default logic for this step
+                        logger.info(f"Created dirsearch-scan single job {job_id} with VPN {getattr(workflow_db, 'vpn_profile', None)}")
+                        continue
+            return sub_jobs_to_create
+        except Exception as e:
+            logger.error(f"Exception in _create_sub_jobs_in_db: {e}")
+            return []
     def _submit_sub_jobs(self, sub_jobs: list[ScanJob]) -> tuple[list, list]:
         """Gửi các sub-job tới scanner node."""
         successful_submissions, failed_submissions = [], []
-
         for job in sub_jobs:
             try:
                 scanner_response, _ = self.submission_service.submit_job(job)
@@ -532,7 +517,6 @@ class WorkflowService:
                 error_message = str(e)
                 crud_scan_job.update(self.db, db_obj=job, obj_in={"status": "failed", "error_message": error_message})
                 failed_submissions.append({"job_id": job.job_id, "error": error_message})
-
         return successful_submissions, failed_submissions
 
     def get_status(self, workflow_id: str) -> dict:

@@ -1,0 +1,152 @@
+curl -X POST http://10.102.199.42:8000/api/workflow \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targets": ["demo.testfire.net"],
+    "vpn_profile": "103.57.130.113.ovpn",
+    "steps": [
+      {
+        "tool_id": "nuclei-scan",
+        "params": {
+          "severity": ["info", "low", "medium", "high", "critical"],
+          "templates": ["exposed-panels", "vulnerabilities", "cves", "default-logins" ], "distributed-scanning": "true/false"
+        }
+      }
+    ]
+  }'
+
+  tôi muốn nuclei có cơ chế chia scanner. mỗi scanner chỉ quét 1 template và 1 severity. nếu biến distributed scanning là true thì chia, và khi chia sẽ bỏ qua vpn_profile được cung cấp ở trên mà tự xem trong database trạng thái các vpn_profile nào đang rảnh thì lấy xài, trường hợp tất cả các vpn đang được sử dụng nhưng còn scanner chưa có thì có thể sử dụng chung vpn các scanner đã đang sử dụng. Nếu biến distributed scanning là false thì giữ nguyên logic cũ như hiện tại và sẽ sử dụng vpn profile được cung cấp trên request (như hiện tại). 
+
+  sẽ có cơ chế merge kết quả các scanner với nhau sao cho format như kết quả của 1 scanner bình thường (giống như portscan khi gọi api/sub_jobs/portscan_id/results thì nó sẽ tự động merge kết quả của các portscan khác thuộc chung workflow), tôi muốn khi gọi api/sub_jobs/nuclei_id/results (chỉ cần gọi 1 id scanner nuclei tự động merge các nuclei khác )
+  đây là ví dụ:
+  {
+  "pagination": {
+    "total_items": 1,
+    "total_pages": 1,
+    "current_page": 1,
+    "page_size": 10,
+    "has_next": false,
+    "has_previous": false
+  },
+  "results": [
+    {
+      "target": "demo.testfire.net",
+      "resolved_ips": [],
+      "open_ports": [],
+      "scan_metadata": {
+        "tool": "nuclei-scan",
+        "job_id": "scan-nuclei-scan-19e5ce" (chỉ cần gọi 1 job id thì ở nuclei_results sẽ có kết quả của các job id khác cùng workflow),
+        "vpn_used": false,
+        "scan_ip": "Unknown",
+        "vpn_local_ip": null,
+        "tun_interface": false,
+        "nuclei_results": [
+          {
+            "template": "http/exposures/apis/swagger-api.yaml",
+            "template-url": "https://cloud.projectdiscovery.io/public/swagger-api",
+            "template-id": "swagger-api",
+            "template-path": "/root/nuclei-templates/http/exposures/apis/swagger-api.yaml",
+            "info": {
+              "name": "Public Swagger API - Detect",
+              "author": [
+                "pdteam",
+                "c-sh0",
+                "amirhossein raeisi"
+              ],
+              "tags": [
+                "exposure",
+                "api",
+                "swagger"
+              ],
+              "description": "Public Swagger API was detected.",
+              "reference": [
+                "https://swagger.io/"
+              ],
+              "severity": "info",
+              "metadata": {
+                "verified": true,
+                "max-request": 59,
+                "shodan-query": "http.title:\"swagger\""
+              },
+              "classification": {
+                "cve-id": null,
+                "cwe-id": [
+                  "cwe-200"
+                ],
+                "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"
+              }
+            },
+            "type": "http",
+            "host": "demo.testfire.net",
+            "port": "443",
+            "scheme": "https",
+            "url": "https://demo.testfire.net",
+            "matched-at": "https://demo.testfire.net/swagger/index.html",
+            "meta": {
+              "paths": "/swagger/index.html"
+            },
+            "ip": "65.61.137.117",
+            "timestamp": "2025-09-05T01:44:30.591077535Z",
+            "matcher-status": true
+          },
+          {
+            "template": "http/miscellaneous/external-service-interaction.yaml",
+            "template-url": "https://cloud.projectdiscovery.io/public/external-service-interaction",
+            "template-id": "external-service-interaction",
+            "template-path": "/root/nuclei-templates/http/miscellaneous/external-service-interaction.yaml",
+            "info": {
+              "name": "External Service Interaction",
+              "author": [
+                "andreluna"
+              ],
+              "tags": [
+                "miscellaneous",
+                "http",
+                "misc",
+                "oast"
+              ],
+              "description": "External Service interaction via Host Header Injection.",
+              "reference": [
+                "https://portswigger.net/kb/issues/00300210_external-service-interaction-http",
+                "https://success.qualys.com/support/s/article/000006843",
+                "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/17-Testing_for_Host_Header_Injection"
+              ],
+              "severity": "info",
+              "metadata": {
+                "max-request": 1
+              },
+              "classification": {
+                "cve-id": null,
+                "cwe-id": [
+                  "cwe-918",
+                  "cwe-406"
+                ]
+              }
+            },
+            "type": "http",
+            "host": "demo.testfire.net",
+            "port": "443",
+            "scheme": "https",
+            "url": "https://demo.testfire.net",
+            "matched-at": "https://demo.testfire.net",
+            "timestamp": "2025-09-05T01:44:37.237121127Z",
+            "interaction": {
+              "protocol": "dns",
+              "unique-id": "d2t3t6kmhjgc7fctavdgrnzd19tshm7fp",
+              "full-id": "d2t3t6kmhjgc7fctavdgrnzd19tshm7fp",
+              "q-type": "A",
+              "raw-request": ";; opcode: QUERY, status: NOERROR, id: 27378\n;; flags:; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version 0; flags: do; udp: 1452\n\n;; QUESTION SECTION:\n;d2t3t6kmhjgc7fctavdgrnzd19tshm7fp.oast.online.\tIN\t A\n",
+              "raw-response": ";; opcode: QUERY, status: NOERROR, id: 27378\n;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 2, ADDITIONAL: 2\n\n;; QUESTION SECTION:\n;d2t3t6kmhjgc7fctavdgrnzd19tshm7fp.oast.online.\tIN\t A\n\n;; ANSWER SECTION:\nd2t3t6kmhjgc7fctavdgrnzd19tshm7fp.oast.online.\t3600\tIN\tA\t167.99.69.236\n\n;; AUTHORITY SECTION:\nd2t3t6kmhjgc7fctavdgrnzd19tshm7fp.oast.online.\t3600\tIN\tNS\tns1.oast.online.\nd2t3t6kmhjgc7fctavdgrnzd19tshm7fp.oast.online.\t3600\tIN\tNS\tns2.oast.online.\n\n;; ADDITIONAL SECTION:\nns1.oast.online.\t3600\tIN\tA\t167.99.69.236\nns2.oast.online.\t3600\tIN\tA\t167.99.69.236\n",
+              "remote-address": "141.101.110.26",
+              "timestamp": "2025-09-05T01:44:35.25885152Z"
+            },
+            "matcher-status": true
+          },
+          {
+            "template": "http/technologies/waf-detect.yaml",
+            "template-url": "https://cloud.projectdiscovery.io/public/waf-detect",
+            "template-id": "waf-detect",
+
+  Cơ chế merge cũng áp dụng khi gọi api/workflows/workflow_id/summary
+
+  ubuntu@ubuntu:~/proxy$ curl -f http://10.102.199.42:8000/api/workflows/workflow-4ba3e246/summary
+{"summary":[{"target":"demo.testfire.net","dns_records":[],"open_ports":[],"web_technologies":[],"vulnerabilities":[{"name":"Public Swagger API - Detect","severity":"info"},{"name":"External Service Interaction","severity":"info"},{"name":"WAF Detection","severity":"info"},{"name":"Weak Cipher Suites Detection","severity":"low"},{"name":"Deprecated TLS Detection","severity":"info"},{"name":"TLS Version - Detect","severity":"info"},{"name":"Weak Cipher Suites Detection","severity":"low"},{"name":"Deprecated TLS Detection","severity":"info"},{"name":"TLS Version - Detect","severity":"info"},{"name":"TLS Version - Detect","severity":"info"},{"name":"Apache Detection","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"HTTP Missing Security Headers","severity":"info"},{"name":"CAA Record","severity":"info"},{"name":"Detect SSL Certificate Issuer","severity":"info"},{"name":"SSL DNS Names","severity":"info"}]}]}

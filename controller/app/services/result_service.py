@@ -137,6 +137,57 @@ class ResultService:
                 },
                 "results": merged_ports[start:end]
             }
+        # Nếu là nuclei-scan và thuộc workflow, thực hiện merge nuclei_results của tất cả sub-job nuclei-scan cùng workflow
+        if job.tool == "nuclei-scan" and job.workflow_id:
+            sub_jobs = db.query(ScanJob).filter(
+                ScanJob.workflow_id == job.workflow_id,
+                ScanJob.tool == "nuclei-scan"
+            ).all()
+            job_ids = [j.job_id for j in sub_jobs]
+            scan_results = db.query(ScanResult).filter(
+                ScanResult.scan_metadata.op('->>')('job_id').in_(job_ids)
+            ).all()
+            # Merge nuclei_results
+            all_findings = []
+            for r in scan_results:
+                nuclei_results = []
+                meta = r.scan_metadata or {}
+                if isinstance(meta, str):
+                    import json
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+                nuclei_results = meta.get("nuclei_results") or []
+                all_findings.extend(nuclei_results)
+            total = len(all_findings)
+            start = (page - 1) * page_size
+            end = start + page_size
+            merged_result = {
+                "target": job.target,
+                "resolved_ips": getattr(job, "resolved_ips", []),
+                "open_ports": getattr(job, "open_ports", []),
+                "scan_metadata": {
+                    "tool": "nuclei-scan",
+                    "job_id": sub_job_id,
+                    "vpn_used": job.vpn_profile is not None,
+                    "scan_ip": getattr(job, "scan_ip", "Unknown"),
+                    "vpn_local_ip": getattr(job, "vpn_local_ip", None),
+                    "tun_interface": getattr(job, "tun_interface", False),
+                    "nuclei_results": all_findings[start:end]
+                }
+            }
+            return {
+                "pagination": {
+                    "total_items": total,
+                    "total_pages": (total + page_size - 1) // page_size,
+                    "current_page": page,
+                    "page_size": page_size,
+                    "has_next": end < total,
+                    "has_previous": page > 1
+                },
+                "results": [merged_result]
+            }
         # Nếu không phải port-scan chia nhỏ, trả về như cũ (lấy kết quả sub-job này, phân trang)
         scan_results = db.query(ScanResult).filter(
             ScanResult.scan_metadata.op('->>')('job_id') == sub_job_id

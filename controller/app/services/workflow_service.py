@@ -383,7 +383,55 @@ class WorkflowService:
                         sub_jobs_to_create.append(job)
                         logger.info(f"Created port-scan sub-job {job_id} chunk {idx+1}/{scanner_count} with VPN {chunk_vpn} ports {chunk_params['ports']}")
                     continue  # skip default logic for this step
-            # --- Default logic for all other tools (và port-scan không chia nhỏ) ---
+                # Nếu không chia nhỏ thì dùng logic mặc định bên dưới
+
+            # --- Custom logic for nuclei-scan distributed scanning ---
+            if step.tool_id == "nuclei-scan":
+                params = step.params.copy() if step.params else {}
+                distributed = params.get("distributed-scanning", False)
+                if str(distributed).lower() == "true":
+                    templates = params.get("templates", [])
+                    severity = params.get("severity", [])
+                    if not templates or not severity:
+                        # Nếu thiếu, fallback về logic cũ
+                        pass
+                    else:
+                        # Lấy danh sách VPN profile rảnh từ DB
+                        from app.services.vpn_service import VPNService
+                        vpn_service = VPNService(self.db)
+                        available_vpns = vpn_service.get_available_vpn_profiles()  # Trả về list vpn_profile
+                        vpn_idx = 0
+                        for t in templates:
+                            for s in severity:
+                                step_counter += 1
+                                job_id = f"scan-nuclei-scan-{uuid4().hex[:6]}"
+                                job_params = {k: v for k, v in params.items() if k not in ["templates", "severity", "distributed-scanning"]}
+                                job_params["templates"] = [t]
+                                job_params["severity"] = [s]
+                                job_params["distributed-scanning"] = True
+                                # Gán VPN profile động
+                                if available_vpns and vpn_idx < len(available_vpns):
+                                    job_vpn = available_vpns[vpn_idx]
+                                    vpn_idx += 1
+                                else:
+                                    # Nếu hết VPN rảnh, dùng lại VPN đã gán cho các job trước đó
+                                    job_vpn = available_vpns[vpn_idx % len(available_vpns)] if available_vpns else None
+                                job_obj = ScanJob(
+                                    job_id=job_id,
+                                    tool=step.tool_id,
+                                    targets=workflow_db.targets,
+                                    options=job_params,
+                                    workflow_id=workflow_db.workflow_id,
+                                    step_order=step_counter,
+                                    vpn_profile=job_vpn,
+                                    vpn_country=getattr(workflow_db, "vpn_country", None),
+                                    vpn_assignment=None
+                                )
+                                job = crud_scan_job.create(self.db, job_obj=job_obj)
+                                sub_jobs_to_create.append(job)
+                                logger.info(f"Created nuclei-scan sub-job {job_id} template {t} severity {s} VPN {job_vpn}")
+                        continue  # skip default logic for this step
+            # --- Default logic for all other tools (và nuclei-scan không chia nhỏ) ---
             step_counter += 1
             job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
             step_params = step.params.copy() if step.params else {}

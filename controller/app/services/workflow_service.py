@@ -446,44 +446,73 @@ class WorkflowService:
                         step_params["threads"] = 10
                 # recursive: bool
                 if "recursive" in step_params:
-                    val = step_params["recursive"]
-                    if isinstance(val, str):
-                        step_params["recursive"] = val.lower() in ["true", "1", "yes"]
-                    else:
-                        step_params["recursive"] = bool(val)
-                # no_extensions: bool
-                if "no_extensions" in step_params:
-                    val = step_params["no_extensions"]
-                    if isinstance(val, str):
-                        step_params["no_extensions"] = val.lower() in ["true", "1", "yes"]
-                    else:
-                        step_params["no_extensions"] = bool(val)
-                # include_status: str
-                if "include_status" in step_params and not isinstance(step_params["include_status"], str):
-                    step_params["include_status"] = str(step_params["include_status"])
-                # extensions: str
-                if "extensions" in step_params and not isinstance(step_params["extensions"], str):
-                    step_params["extensions"] = str(step_params["extensions"])
-                # wordlist: str
-                if "wordlist" in step_params and not isinstance(step_params["wordlist"], str):
-                    step_params["wordlist"] = str(step_params["wordlist"])
-            import json
-            job_obj = ScanJob(
-                job_id=job_id,
-                tool=step.tool_id,
-                targets=workflow_db.targets,
-                options=step_params,
-                workflow_id=workflow_db.workflow_id,
-                step_order=step_counter,
-                vpn_profile=json.dumps(getattr(workflow_db, "vpn_profile", None)) if isinstance(getattr(workflow_db, "vpn_profile", None), dict) else getattr(workflow_db, "vpn_profile", None),
-                vpn_country=getattr(workflow_db, "vpn_country", None),
-                vpn_assignment=json.dumps(vpn_assignment) if isinstance(vpn_assignment, dict) else vpn_assignment
-            )
-            job = crud_scan_job.create(self.db, job_obj=job_obj)
-            sub_jobs_to_create.append(job)
-
-        return sub_jobs_to_create
-
+                            # --- Custom logic for dirsearch-scan sharding by wordlist lines ---
+                            if step.tool_id == "dirsearch-scan":
+                                params = step.params.copy() if step.params else {}
+                                scanner_count = params.get("scanner_count")
+                                # Nếu chia nhỏ (scanner_count > 1)
+                                if scanner_count and int(scanner_count) > 1:
+                                    WORDLIST_LINE_COUNT = 9677  # hardcoded
+                                    lines_per_scanner = WORDLIST_LINE_COUNT // int(scanner_count)
+                                    remainder = WORDLIST_LINE_COUNT % int(scanner_count)
+                                    start_line = 0
+                                    # Lấy danh sách VPN idle từ database (proxy node)
+                                    from app.services.vpn_service import VPNService
+                                    vpn_service = VPNService()
+                                    available_vpns = vpn_service.get_available_vpn_profiles()  # Trả về list vpn_profile
+                                    for idx in range(int(scanner_count)):
+                                        end_line = start_line + lines_per_scanner - 1
+                                        if idx < remainder:
+                                            end_line += 1
+                                        step_counter += 1
+                                        job_id = f"scan-dirsearch-scan-{uuid4().hex[:6]}"
+                                        chunk_params = params.copy()
+                                        chunk_params["wordlist_start"] = start_line
+                                        chunk_params["wordlist_end"] = end_line
+                                        # Ưu tiên VPN idle, nếu không đủ thì dùng lại
+                                        if available_vpns and idx < len(available_vpns):
+                                            chunk_vpn = available_vpns[idx]
+                                        elif available_vpns:
+                                            chunk_vpn = available_vpns[idx % len(available_vpns)]
+                                        else:
+                                            chunk_vpn = None
+                                        import json
+                                        job_obj = ScanJob(
+                                            job_id=job_id,
+                                            tool=step.tool_id,
+                                            targets=workflow_db.targets,
+                                            options=chunk_params,
+                                            workflow_id=workflow_db.workflow_id,
+                                            step_order=step_counter,
+                                            vpn_profile=json.dumps(chunk_vpn) if isinstance(chunk_vpn, dict) else chunk_vpn,
+                                            vpn_country=getattr(workflow_db, "vpn_country", None),
+                                            vpn_assignment=None
+                                        )
+                                        job = crud_scan_job.create(self.db, job_obj=job_obj)
+                                        sub_jobs_to_create.append(job)
+                                        logger.info(f"Created dirsearch-scan sub-job {job_id} chunk {idx+1}/{scanner_count} with VPN {chunk_vpn} lines {start_line}-{end_line}")
+                                        start_line = end_line + 1
+                                    continue  # skip default logic for this step
+                                # Nếu không chia nhỏ thì dùng vpn_profile từ request
+                                else:
+                                    import json
+                                    step_counter += 1
+                                    job_id = f"scan-dirsearch-scan-{uuid4().hex[:6]}"
+                                    job_obj = ScanJob(
+                                        job_id=job_id,
+                                        tool=step.tool_id,
+                                        targets=workflow_db.targets,
+                                        options=params,
+                                        workflow_id=workflow_db.workflow_id,
+                                        step_order=step_counter,
+                                        vpn_profile=json.dumps(getattr(workflow_db, "vpn_profile", None)) if isinstance(getattr(workflow_db, "vpn_profile", None), dict) else getattr(workflow_db, "vpn_profile", None),
+                                        vpn_country=getattr(workflow_db, "vpn_country", None),
+                                        vpn_assignment=json.dumps(vpn_assignment) if isinstance(vpn_assignment, dict) else vpn_assignment
+                                    )
+                                    job = crud_scan_job.create(self.db, job_obj=job_obj)
+                                    sub_jobs_to_create.append(job)
+                                    logger.info(f"Created dirsearch-scan single job {job_id} with VPN {getattr(workflow_db, 'vpn_profile', None)}")
+                                    continue  # skip default logic for this step
     def _submit_sub_jobs(self, sub_jobs: list[ScanJob]) -> tuple[list, list]:
         """Gửi các sub-job tới scanner node."""
         successful_submissions, failed_submissions = [], []

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     # Service URLs
     SCANNER_NODE_URL: str = os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
     CONTROLLER_CALLBACK_URL: str = os.getenv("CONTROLLER_CALLBACK_URL", "http://controller:8000")
-    VPN_PROXY_NODE: str = os.getenv("VPN_PROXY_NODE", "http://10.102.199.221:8000")
+    VPN_PROXY_NODE: str = os.getenv("VPN_PROXY_NODE", "http://10.102.199.37:8000")
 
     # Project Information
     PROJECT_NAME: str = "Distributed Scanner Controller"

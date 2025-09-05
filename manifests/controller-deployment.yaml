@@ -22,13 +22,13 @@ spec:
         - name: DATABASE_URL
           value: sqlite:////data/scan_results.db
         - name: SCANNER_NODE_URL
-          value: http://10.102.199.37:8000  # Scanner Node VM external IP
+          value: http://10.102.199.221:8000  # Scanner Node VM external IP
         - name: CONTROLLER_CALLBACK_URL
           value: http://10.102.199.42:8000  # Ubuntu VM external IP
         - name: EXTERNAL_CONTROLLER_IP
           value: "10.102.199.42"  # Controller VM IP
         - name: VPN_PROXY_NODE
-          value: "http://10.102.199.221:8000"  # VPN proxy server URL cho assignment
+          value: "http://10.102.199.37:8000"  # VPN proxy server URL cho assignment
         ports:
         - containerPort: 8000
         volumeMounts:

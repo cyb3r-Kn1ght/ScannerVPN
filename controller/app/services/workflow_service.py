@@ -436,6 +436,37 @@ class WorkflowService:
             step_counter += 1
             job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
             step_params = step.params.copy() if step.params else {}
+            # Nếu là dirsearch-scan, ép kiểu các trường options cho đúng
+            if step.tool_id == "dirsearch-scan" and isinstance(step_params, dict):
+                # threads: int
+                if "threads" in step_params:
+                    try:
+                        step_params["threads"] = int(step_params["threads"])
+                    except Exception:
+                        step_params["threads"] = 10
+                # recursive: bool
+                if "recursive" in step_params:
+                    val = step_params["recursive"]
+                    if isinstance(val, str):
+                        step_params["recursive"] = val.lower() in ["true", "1", "yes"]
+                    else:
+                        step_params["recursive"] = bool(val)
+                # no_extensions: bool
+                if "no_extensions" in step_params:
+                    val = step_params["no_extensions"]
+                    if isinstance(val, str):
+                        step_params["no_extensions"] = val.lower() in ["true", "1", "yes"]
+                    else:
+                        step_params["no_extensions"] = bool(val)
+                # include_status: str
+                if "include_status" in step_params and not isinstance(step_params["include_status"], str):
+                    step_params["include_status"] = str(step_params["include_status"])
+                # extensions: str
+                if "extensions" in step_params and not isinstance(step_params["extensions"], str):
+                    step_params["extensions"] = str(step_params["extensions"])
+                # wordlist: str
+                if "wordlist" in step_params and not isinstance(step_params["wordlist"], str):
+                    step_params["wordlist"] = str(step_params["wordlist"])
             import json
             job_obj = ScanJob(
                 job_id=job_id,

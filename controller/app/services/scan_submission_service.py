@@ -14,8 +14,15 @@ class ScanSubmissionService:
         """
         # VPN assignment được lấy từ bản ghi job trong DB
         vpn_assignment = job.vpn_assignment
+        # Đảm bảo vpn_assignment là Dict, không phải str
+        if isinstance(vpn_assignment, str):
+            import json
+            try:
+                vpn_assignment = json.loads(vpn_assignment)
+            except Exception:
+                vpn_assignment = None
         if not vpn_assignment and job.vpn_profile: # Fallback nếu chưa gán vpn
-             vpn_assignment = {"filename": job.vpn_profile, "country": job.vpn_country}
+            vpn_assignment = {"filename": job.vpn_profile, "country": job.vpn_country}
 
         # Đảm bảo job.options là Dict, không phải str
         options = job.options

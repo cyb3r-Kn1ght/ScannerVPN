@@ -416,6 +416,7 @@ class WorkflowService:
                                 else:
                                     # Nếu hết VPN rảnh, dùng lại VPN đã gán cho các job trước đó
                                     job_vpn = available_vpns[vpn_idx % len(available_vpns)] if available_vpns else None
+                                import json
                                 job_obj = ScanJob(
                                     job_id=job_id,
                                     tool=step.tool_id,
@@ -423,7 +424,7 @@ class WorkflowService:
                                     options=job_params,
                                     workflow_id=workflow_db.workflow_id,
                                     step_order=step_counter,
-                                    vpn_profile=job_vpn,
+                                    vpn_profile=json.dumps(job_vpn) if isinstance(job_vpn, dict) else job_vpn,
                                     vpn_country=getattr(workflow_db, "vpn_country", None),
                                     vpn_assignment=None
                                 )
@@ -435,6 +436,7 @@ class WorkflowService:
             step_counter += 1
             job_id = f"scan-{step.tool_id}-{uuid4().hex[:6]}"
             step_params = step.params.copy() if step.params else {}
+            import json
             job_obj = ScanJob(
                 job_id=job_id,
                 tool=step.tool_id,
@@ -442,9 +444,9 @@ class WorkflowService:
                 options=step_params,
                 workflow_id=workflow_db.workflow_id,
                 step_order=step_counter,
-                vpn_profile=getattr(workflow_db, "vpn_profile", None),
+                vpn_profile=json.dumps(getattr(workflow_db, "vpn_profile", None)) if isinstance(getattr(workflow_db, "vpn_profile", None), dict) else getattr(workflow_db, "vpn_profile", None),
                 vpn_country=getattr(workflow_db, "vpn_country", None),
-                vpn_assignment=vpn_assignment
+                vpn_assignment=json.dumps(vpn_assignment) if isinstance(vpn_assignment, dict) else vpn_assignment
             )
             job = crud_scan_job.create(self.db, job_obj=job_obj)
             sub_jobs_to_create.append(job)

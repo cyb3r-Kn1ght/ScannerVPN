@@ -164,7 +164,7 @@ class ResultService:
             start = (page - 1) * page_size
             end = start + page_size
             merged_result = {
-                "target": job.target,
+                "target": job.targets[0] if hasattr(job, "targets") and job.targets else None,
                 "resolved_ips": getattr(job, "resolved_ips", []),
                 "open_ports": getattr(job, "open_ports", []),
                 "scan_metadata": {

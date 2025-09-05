@@ -1,4 +1,3 @@
-
 FROM python:3.11-slim
 
 # Cài các gói cần thiết cho VPN
@@ -20,6 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt \
 WORKDIR /app
 COPY dirsearch_scan.py /app/dirsearch_scan.py
 COPY vpn_manager.py /app/vpn_manager.py
+COPY dicc.txt /app/dicc.txt
+
 RUN chmod +x /app/dirsearch_scan.py
 
 ENTRYPOINT ["python3", "/app/dirsearch_scan.py"]

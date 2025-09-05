@@ -17,10 +17,18 @@ class ScanSubmissionService:
         if not vpn_assignment and job.vpn_profile: # Fallback nếu chưa gán vpn
              vpn_assignment = {"filename": job.vpn_profile, "country": job.vpn_country}
 
+        # Đảm bảo job.options là Dict, không phải str
+        options = job.options
+        if isinstance(options, str):
+            import json
+            try:
+                options = json.loads(options)
+            except Exception:
+                options = {}
         payload = {
             "tool": job.tool,
             "targets": job.targets,
-            "options": job.options,
+            "options": options,
             "job_id": job.job_id,
             "controller_callback_url": settings.CONTROLLER_CALLBACK_URL,
             "vpn_assignment": vpn_assignment,

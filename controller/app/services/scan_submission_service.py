@@ -36,6 +36,8 @@ class ScanSubmissionService:
         }
 
         logger.info(f"Submitting job {job.job_id} to scanner node at {settings.SCANNER_NODE_URL}")
+        print(f"[DEBUG] Payload gửi sang scanner-node-api:")
+        print(payload)
 
         try:
             response = httpx.post(

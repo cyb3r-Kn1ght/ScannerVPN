@@ -398,7 +398,7 @@ class WorkflowService:
                     else:
                         # Lấy danh sách VPN profile rảnh từ DB
                         from app.services.vpn_service import VPNService
-                        vpn_service = VPNService(self.db)
+                        vpn_service = VPNService()
                         available_vpns = vpn_service.get_available_vpn_profiles()  # Trả về list vpn_profile
                         vpn_idx = 0
                         for t in templates:

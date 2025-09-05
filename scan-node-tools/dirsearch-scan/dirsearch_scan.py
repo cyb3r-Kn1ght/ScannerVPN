@@ -319,5 +319,5 @@ if __name__ == "__main__":
         if vpn_connected:
             print("[*] Disconnecting VPN...")
             vpn_manager.disconnect_vpn()
-else:
+
 

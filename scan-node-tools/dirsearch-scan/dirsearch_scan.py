@@ -196,8 +196,10 @@ if __name__ == "__main__":
                     tf.write(line)
                 wordlist_path = tf.name
         # Prepare allowed_status for post-filtering
-        if args.include_status:
-            allowed_status = set(int(s.strip()) for s in args.include_status.split(",") if s.strip().isdigit())
+        # Lấy đúng tham số include_status từ request (params)
+        include_status_raw = getattr(args, "include_status", None)
+        if include_status_raw:
+            allowed_status = set(int(s.strip()) for s in include_status_raw.split(",") if s.strip().isdigit())
         else:
             allowed_status = set()
         # Base command
@@ -206,8 +208,8 @@ if __name__ == "__main__":
             base_cmd += ["-r"]
         if wordlist_path:
             base_cmd += ["-w", wordlist_path]
-        if args.include_status:
-            base_cmd += ["-i", args.include_status]
+        if include_status_raw:
+            base_cmd += ["-i", include_status_raw]
         if args.extensions and not args.no_extensions:
             base_cmd += ["-e", args.extensions]
         # Mục tiêu

@@ -1,0 +1,102 @@
+.
+├── README.md
+├── controller
+│   ├── Dockerfile
+│   ├── Makefile
+│   ├── app
+│   │   ├── __init__.py
+│   │   ├── api
+│   │   ├── core
+│   │   ├── crud
+│   │   ├── db
+│   │   ├── main.py
+│   │   ├── models
+│   │   ├── schemas
+│   │   ├── services
+│   │   └── utils
+│   ├── data
+│   │   ├── Ports-1-To-65535.txt
+│   │   └── nmap-ports-top1000.txt
+│   ├── migrate_add_vpn_fields.py
+│   ├── reminder.txt
+│   ├── requirements.txt
+│   ├── scripts
+│   │   └── bootstrap_vpn_profiles.py
+│   ├── tools.yaml
+│   └── venv
+│       ├── bin
+│       ├── lib
+│       ├── lib64
+│       └── pyvenv.cfg
+├── manifests
+│   ├── controller-deployment.yaml
+│   ├── controller-nodeport.yaml
+│   ├── controller-pv.yaml
+│   ├── controller-rbac.yaml
+│   ├── controller-service.yaml
+│   ├── jobs
+│   │   └── scan-tool-job.yaml
+│   ├── namespace.yaml
+│   ├── scanner-node-api-deployment.yaml
+│   ├── scanner-node-api-service.yaml
+│   └── scanner-node-rbac.yaml
+├── project_structure.txt
+├── scan-node-tools
+│   ├── bruteforce
+│   │   ├── Dockerfile
+│   │   ├── bf_runner.py
+│   │   ├── job.json
+│   │   ├── lab
+│   │   ├── requirements.txt
+│   │   └── wordlists
+│   ├── dirsearch-scan
+│   │   ├── Dockerfile
+│   │   ├── dirsearch_scan.py
+│   │   └── vpn_manager.py
+│   ├── dns-lookup
+│   │   ├── Dockerfile
+│   │   ├── dns_lookup.py
+│   │   ├── requirements.txt
+│   │   └── vpn_manager.py
+│   ├── ffuf-entry
+│   │   ├── Dockerfile
+│   │   ├── ffuf_entry.py
+│   │   └── job.json
+│   ├── httpx-scan
+│   │   ├── Dockerfile
+│   │   ├── httpx_scan.py
+│   │   ├── requirements.httpx.txt
+│   │   └── vpn_manager.py
+│   ├── nuclei-scan
+│   │   ├── Dockerfile
+│   │   ├── nuclei_scan.py
+│   │   ├── requirements.txt
+│   │   └── vpn_manager.py
+│   ├── port-scan
+│   │   ├── Dockerfile
+│   │   ├── port_scan.py
+│   │   ├── requirements.txt
+│   │   └── vpn_manager.py
+│   ├── sqlmap-scan
+│   │   ├── Dockerfile
+│   │   ├── sqlmap_scan.py
+│   │   └── vpn_manager.py
+│   └── wpscan-scan
+│       ├── Dockerfile
+│       ├── requirements.txt
+│       ├── vpn_manager.py
+│       └── wpscan_scan.py
+├── scan_results.db
+├── scanner-node-api
+│   ├── Dockerfile
+│   ├── Makefile
+│   ├── build.sh
+│   ├── main.py
+│   └── requirements.txt
+└── vpn-sample
+    ├── Dockerfile
+    ├── entrypoint.sh
+    ├── fetch_vpn.py
+    └── scanner-node.yaml
+
+31 directories, 68 files

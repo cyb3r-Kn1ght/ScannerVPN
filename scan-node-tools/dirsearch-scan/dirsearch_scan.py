@@ -195,6 +195,11 @@ if __name__ == "__main__":
                 for line in subset:
                     tf.write(line)
                 wordlist_path = tf.name
+        # Prepare allowed_status for post-filtering
+        if args.include_status:
+            allowed_status = set(int(s.strip()) for s in args.include_status.split(",") if s.strip().isdigit())
+        else:
+            allowed_status = set()
         # Base command
         base_cmd = ["python3", "/opt/dirsearch/dirsearch.py", "-t", str(args.threads)]
         if args.recursive:
@@ -221,9 +226,13 @@ if __name__ == "__main__":
             with open(out, "r", encoding="utf-8", errors="ignore") as fh:
                 raw = fh.read().strip()
             try:
-                # In ra nội dung JSON report nguyên trạng
-                findings = json.loads(raw).get("results", []) if raw else []
-                print(raw)
+                all_results = json.loads(raw).get("results", []) if raw else []
+                # Post-filter by allowed_status
+                if allowed_status:
+                    findings = [item for item in all_results if int(item.get("status", 0)) in allowed_status]
+                else:
+                    findings = all_results
+                print(json.dumps({"findings": findings}, ensure_ascii=False))
             except Exception:
                 print(json.dumps({"error":"invalid json report", "path": out}, ensure_ascii=False))
         else:
@@ -246,6 +255,8 @@ if __name__ == "__main__":
                     if not m:
                         continue
                     code = int(m.group("code"))
+                    if allowed_status and code not in allowed_status:
+                        continue
                     url  = m.group("url").rstrip(",);")
                     size = (m.group("size") or "").strip()
                     red  = m.group("redirect")

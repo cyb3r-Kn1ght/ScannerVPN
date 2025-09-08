@@ -218,6 +218,23 @@ if __name__ == "__main__":
         else:
             base_cmd += ["-u", args.url]
 
+        # Debug thông tin quét
+        print(f"[DEBUG] job_id: {os.getenv('JOB_ID')}")
+        print(f"[DEBUG] wordlist_path: {wordlist_path}")
+        print(f"[DEBUG] wordlist_start: {getattr(args, 'wordlist_start', None)}")
+        print(f"[DEBUG] wordlist_end: {getattr(args, 'wordlist_end', None)}")
+        try:
+            with open(wordlist_path, "r", encoding="utf-8", errors="ignore") as f:
+                debug_lines = f.readlines()
+            print(f"[DEBUG] wordlist_lines: {len(debug_lines)}")
+        except Exception as e:
+            print(f"[DEBUG] wordlist read error: {e}")
+        print(f"[DEBUG] targets: {args.url or args.url_file}")
+        print(f"[DEBUG] threads: {args.threads}")
+        print(f"[DEBUG] extensions: {args.extensions}")
+        print(f"[DEBUG] include_status: {getattr(args, 'include_status', None)}")
+        print(f"[DEBUG] recursive: {args.recursive}")
+
         # Ưu tiên JSON-report nếu có
         findings = []
         if has_json_report():

@@ -177,6 +177,24 @@ if __name__ == "__main__":
         parser.add_argument("--no-extensions", action="store_true", help="Không dùng -e để quét cả đường dẫn không đuôi")
         args = parser.parse_args()
 
+        # Debug thông tin scan ngay sau khi parse args
+        print(f"[DEBUG] job_id: {os.getenv('JOB_ID')}")
+        print(f"[DEBUG] wordlist_path: {getattr(args, 'wordlist', None)}")
+        print(f"[DEBUG] wordlist_start: {getattr(args, 'wordlist_start', None)}")
+        print(f"[DEBUG] wordlist_end: {getattr(args, 'wordlist_end', None)}")
+        try:
+            if getattr(args, 'wordlist', None):
+                with open(args.wordlist, "r", encoding="utf-8", errors="ignore") as f:
+                    debug_lines = f.readlines()
+                print(f"[DEBUG] wordlist_lines: {len(debug_lines)}")
+        except Exception as e:
+            print(f"[DEBUG] wordlist read error: {e}")
+        print(f"[DEBUG] targets: {getattr(args, 'url', None) or getattr(args, 'url_file', None)}")
+        print(f"[DEBUG] threads: {getattr(args, 'threads', None)}")
+        print(f"[DEBUG] extensions: {getattr(args, 'extensions', None)}")
+        print(f"[DEBUG] include_status: {getattr(args, 'include_status', None)}")
+        print(f"[DEBUG] recursive: {getattr(args, 'recursive', None)}")
+
         if not args.url and not args.url_file:
             print(json.dumps({"error":"missing --url or --url-file"})); sys.exit(2)
         if args.extensions and args.no_extensions:

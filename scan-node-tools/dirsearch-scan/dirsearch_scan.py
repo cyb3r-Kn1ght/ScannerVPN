@@ -162,6 +162,36 @@ if __name__ == "__main__":
             if '--url-file' not in new_argv:
                 new_argv.extend(['--url-file', '/tmp/targets.txt'])
 
+        # Parse SCAN_OPTIONS env (JSON) và truyền vào sys.argv nếu có
+        scan_options_env = os.getenv("SCAN_OPTIONS")
+        if scan_options_env:
+            try:
+                import json
+                scan_options = json.loads(scan_options_env)
+                # Map key -> arg
+                option_map = {
+                    "wordlist": "--wordlist",
+                    "wordlist_start": "--wordlist-start",
+                    "wordlist_end": "--wordlist-end",
+                    "threads": "--threads",
+                    "extensions": "--extensions",
+                    "include_status": "--include-status",
+                    "recursive": "--recursive",
+                    "no_extensions": "--no-extensions"
+                }
+                for k, v in scan_options.items():
+                    arg_name = option_map.get(k)
+                    if not arg_name:
+                        continue
+                    # Boolean flags
+                    if arg_name in ["--recursive", "--no-extensions"]:
+                        if v:
+                            new_argv.append(arg_name)
+                    else:
+                        new_argv.extend([arg_name, str(v)])
+            except Exception as e:
+                print(f"[DEBUG] Failed to parse SCAN_OPTIONS env: {e}")
+
         sys.argv = new_argv
 
         parser = argparse.ArgumentParser(description="Wrapper cho dirsearch -> JSON")

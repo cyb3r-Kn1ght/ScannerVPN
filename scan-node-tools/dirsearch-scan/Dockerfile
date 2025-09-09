@@ -23,4 +23,4 @@ COPY dicc.txt /app/dicc.txt
 
 RUN chmod +x /app/dirsearch_scan.py
 
-ENTRYPOINT ["python3", "/app/dirsearch_scan.py"]
+ENTRYPOINT ["python3", "-u", "/app/dirsearch_scan.py"]

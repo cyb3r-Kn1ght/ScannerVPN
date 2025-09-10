@@ -240,8 +240,9 @@ if __name__ == "__main__":
             end = min(len(lines)-1, args.wordlist_end)
             subset = lines[start:end+1]
             with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w", encoding="utf-8") as tf:
-                for line in subset:
+                for idx, line in enumerate(subset):
                     tf.write(line)
+                    print(f"[SCAN] Chuẩn bị quét dòng {start + idx}: {line.strip()}")
                 wordlist_path = tf.name
         # Prepare allowed_status for post-filtering
         # Lấy đúng tham số include_status từ request (params)

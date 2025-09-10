@@ -28,9 +28,6 @@
 # Sử dụng Python 3.11 slim
 FROM python:3.11-slim
 
-# Chọn mirror nhanh hơn (Cloudflare hoặc Vinahost)
-RUN sed -i 's|deb.debian.org|mirror.cloudflare.com|g' /etc/apt/sources.list
-
 # Cài đặt gói cần thiết với retry 5 lần để tránh treo
 RUN set -e; \
     n=0; \

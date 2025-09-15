@@ -38,7 +38,47 @@ class ResultService:
                 if job.workflow_id:
                     crud_workflow.update_workflow_progress(self.db, job.workflow_id, logger=logging.getLogger(__name__))
 
+                    # THÊM: Trigger AI analysis khi job hoàn thành
+                    self._trigger_ai_analysis(job.workflow_id, job.job_id)
+
         self.db.commit()
+
+    def _trigger_ai_analysis(self, workflow_id: str, job_id: str):
+        """Trigger AI analysis cho job vừa hoàn thành"""
+        try:
+            from app.services.auto_workflow_service import AutoWorkflowService
+            from app.core.config import settings
+            
+            # Chỉ trigger nếu auto workflow được enable
+            if not getattr(settings, 'AUTO_WORKFLOW_ENABLED', True):
+                return
+            
+            # Chạy AI analysis trong background
+            import asyncio
+            import threading
+            
+            def run_ai_analysis():
+                try:
+                    # Tạo event loop mới cho thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    auto_service = AutoWorkflowService(self.db)
+                    loop.run_until_complete(
+                        auto_service.analyze_and_suggest_next_steps(workflow_id, job_id)
+                    )
+                    loop.close()
+                except Exception as e:
+                    logging.getLogger(__name__).error(f"AI analysis thread failed: {e}", exc_info=True)
+            
+          
+            thread = threading.Thread(target=run_ai_analysis, daemon=True)
+            thread.start()
+            
+            logging.getLogger(__name__).info(f"Started AI analysis thread for workflow {workflow_id}, job {job_id}")
+            
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Failed to trigger AI analysis: {e}", exc_info=True)
 
     # Đã chuyển logic update workflow progress sang crud_workflow.update_workflow_progress
 

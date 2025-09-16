@@ -1,15 +1,74 @@
 # app/api/endpoints/ai_advisor.py
+import logging
+import asyncio
+from typing import Dict, Any
+
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+
 from app.api.deps import get_db
 from app.services.ai_advisor_service import AIAdvisorService
 from app.services.auto_workflow_service import AutoWorkflowService
 from app.models.scan_result import ScanResult
 from app.models.scan_job import ScanJob
-import asyncio
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+@router.post("/api/ai/analyze-job/{job_id}", summary="Phân tích kết quả của một job bằng AI")
+def analyze_job_with_ai(
+    job_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Lấy kết quả của một scan job đã hoàn thành, gửi đến AI để phân tích,
+    và trả về các đề xuất hành động.
+    """
+    # 1. Lấy thông tin job
+    job = db.query(ScanJob).filter(ScanJob.job_id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail="Job has not been completed yet. Analysis is only available for completed jobs.")
+
+    # 2. Lấy kết quả của job đó
+    scan_results = db.query(ScanResult).filter(
+        ScanResult.scan_metadata.op('->>')('job_id') == job_id
+    ).all()
+
+    if not scan_results:
+        raise HTTPException(status_code=404, detail="No scan results found for this job.")
+
+    # 3. Chuyển đổi kết quả sang dạng dict để service xử lý
+    results_data = []
+    for result in scan_results:
+        results_data.append({
+            "target": result.target,
+            "open_ports": result.open_ports or [],
+            "scan_metadata": result.scan_metadata or {}
+        })
+    
+    # 4. Gọi AI Advisor Service để phân tích
+    try:
+        ai_service = AIAdvisorService()
+        # Chỉ lấy target đầu tiên để phân tích, vì job đơn lẻ thường chỉ có 1 target chính
+        target_to_analyze = job.targets[0] if job.targets else "Unknown"
+
+        analysis = ai_service.analyze_scan_results(
+            scan_results=results_data,
+            current_tool=job.tool,
+            target=target_to_analyze
+        )
+        
+        if "error" in analysis:
+             raise HTTPException(status_code=500, detail=f"AI analysis failed: {analysis['error']}")
+
+        return analysis
+
+    except Exception as e:
+        logger.error(f"Failed during AI analysis for job {job_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error during AI analysis: {str(e)}")
 
 @router.post("/api/ai/analyze", summary="Manually trigger AI analysis for a completed job")
 def manual_ai_analysis(

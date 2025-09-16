@@ -1,285 +1,232 @@
-import requests
-import json
-import time
-import sys
+import requests, json, time, sys
 
 class Colors:
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    PURPLE = '\033[95m'
-    CYAN = '\033[96m'
-    WHITE = '\033[97m'
-    BOLD = '\033[1m'
-    END = '\033[0m'
+    GREEN = '\033[92m'; RED = '\033[91m'; YELLOW = '\033[93m'; BLUE = '\033[94m'
+    PURPLE = '\033[95m'; CYAN = '\033[96m'; WHITE = '\033[97m'; BOLD = '\033[1m'; END = '\033[0m'
 
-def print_colored(text, color):
-    print(f"{color}{text}{Colors.END}")
+def print_colored(t, c): print(f"{c}{t}{Colors.END}")
+def print_header(t):
+    print_colored("\n" + "="*64, Colors.BLUE)
+    print_colored("  " + t, Colors.BOLD + Colors.WHITE)
+    print_colored("="*64, Colors.BLUE)
+def print_step(t): print_colored(f"\n{t}", Colors.CYAN)
+def ok(t): print_colored(f"✅ {t}", Colors.GREEN)
+def err(t): print_colored(f"❌ {t}", Colors.RED)
+def warn(t): print_colored(f"⚠️  {t}", Colors.YELLOW)
+def info(t): print_colored(f"ℹ️  {t}", Colors.BLUE)
 
-def print_header(text):
-    print_colored(f"\n{'='*60}", Colors.BLUE)
-    print_colored(f"  {text}", Colors.BOLD + Colors.WHITE)
-    print_colored(f"{'='*60}", Colors.BLUE)
-
-def print_step(step, text):
-    print_colored(f"\n[Step {step}] {text}", Colors.CYAN)
-
-def print_success(text):
-    print_colored(f"✅ {text}", Colors.GREEN)
-
-def print_error(text):
-    print_colored(f"❌ {text}", Colors.RED)
-
-def print_warning(text):
-    print_colored(f"⚠️  {text}", Colors.YELLOW)
-
-def print_info(text):
-    print_colored(f"ℹ️  {text}", Colors.BLUE)
-
-# Configuration
 CONTROLLER_URL = "http://10.102.199.42:8000"
 RAG_SERVER_URL = "http://10.102.199.221:8080"
 
-def test_rag_server():
-    """Test RAG server functionality"""
-    print_step(1, "Testing RAG Server Connection")
+TOOLS_ORDER = [
+    "port-scan",
+    "httpx-scan",
+    "nuclei-scan",
+    "dirsearch-scan",
+    "wpscan-scan",
+    "sqlmap-scan",
+    "bruteforce-scan"
+]
 
+DEFAULT_TARGETS = ["scanme.nmap.org"]
+POLL_INTERVAL = 5
+MAX_WAIT_SECONDS = None
+MAX_CHAIN = len(TOOLS_ORDER)
+
+def test_rag():
+    print_step(1, "Kiểm tra RAG server")
     try:
-        response = requests.post(
-            f"{RAG_SERVER_URL}/rag_query",
-            json={"query": "1 + 1 = ?"},
-#            timeout=15
-        )
-
-        if response.status_code == 200:
-            result = response.json()
-            answer = result.get('answer', '')
-            print_success("RAG server is working correctly")
-            print_info(f"Sample answer: {answer[:150]}...")
+        r = requests.post(f"{RAG_SERVER_URL}/rag_query", json={"query": "ping"})
+        if r.status_code == 200:
+            ok("RAG OK")
             return True
-        else:
-            print_error(f"RAG server returned status: {response.status_code}")
-            return False
-
-    except requests.exceptions.ConnectionError:
-        print_error("Cannot connect to RAG server")
-        print_info("Make sure RAG server is running: python start_rag_server.ps1")
-        return False
+        err(f"RAG lỗi: {r.status_code}")
     except Exception as e:
-        print_error(f"RAG server test failed: {e}")
-        return False
+        err(f"RAG không truy cập được: {e}")
+    return False
 
-def test_controller_ai_status():
-    """Test controller AI status endpoint"""
-    print_step(2, "Testing Controller AI Integration")
-
+def test_controller():
+    print_step(2, "Kiểm tra Controller AI status")
     try:
-        response = requests.get(f"{CONTROLLER_URL}/api/ai/status")
-
-        if response.status_code == 200:
-            result = response.json()
-            print_success("Controller AI integration is active")
-            print_info(f"Auto workflow: {'ENABLED' if result.get('auto_workflow_enabled') else 'DISABLED'}")
-            print_info(f"RAG server status: {result.get('rag_server_status', 'unknown')}")
-            print_info(f"Max auto jobs: {result.get('max_auto_jobs', 'unknown')}")
+        r = requests.get(f"{CONTROLLER_URL}/api/ai/status")
+        if r.status_code == 200:
+            js = r.json()
+            ok("Controller AI OK")
+            info(f"Auto-workflow: {'ENABLED' if js.get('auto_workflow_enabled') else 'DISABLED'}")
             return True
-        else:
-            print_error(f"Controller AI status failed: {response.status_code}")
-            return False
-
-    except requests.exceptions.ConnectionError:
-        print_error("Cannot connect to Controller")
-        print_info("Make sure Controller is running: python start_controller_with_ai.ps1")
-        return False
+        err(f"Controller status lỗi: {r.status_code}")
     except Exception as e:
-        print_error(f"Controller test failed: {e}")
-        return False
+        err(f"Controller không truy cập được: {e}")
+    return False
 
-def create_demo_workflow():
-    """Create a demo workflow to trigger AI analysis"""
-    print_step(3, "Creating Demo Workflow")
-
-    # Create a simple port scan workflow
-    workflow_data = {
-        "targets": ["scanme.nmap.org"],
-        "steps": [
-            {
-                "tool_id": "port-scan",
-                "params": {
-                    "ports": "80,443,22,21,25,53,110,143,993,995",
-                    "scan_type": "syn"
-                }
-            }
-        ],
-        "description": "AI Demo Workflow - Port Scan"
+def create_workflow(tool_id, targets, params=None, desc=None):
+    body = {
+        "targets": targets,
+        "steps": [{
+            "tool_id": tool_id,
+            "params": params or {}
+        }],
+        "description": desc or f"Auto AI chain - {tool_id}"
     }
-
     try:
-        response = requests.post(
-            f"{CONTROLLER_URL}/api/workflow",
-            json=workflow_data,
- #           timeout=30
-        )
-
-        if response.status_code in [200, 201]:
-            result = response.json()
-            workflow_id = result.get("workflow_id")
-            print_success(f"Demo workflow created: {workflow_id}")
-            print_info(f"Total steps: {result.get('total_steps', 0)}")
-            print_info(f"Status: {result.get('status', 'unknown')}")
-            return workflow_id
-        else:
-            print_error(f"Failed to create workflow: {response.status_code}")
-            print_error(f"Response: {response.text}")
-            return None
-
+        r = requests.post(f"{CONTROLLER_URL}/api/workflow", json=body)
+        if r.status_code in [200, 201]:
+            js = r.json()
+            wf = js.get("workflow_id")
+            ok(f"Tạo workflow ({tool_id}) => {wf}")
+            return wf
+        err(f"Tạo workflow thất bại {tool_id}: {r.status_code} {r.text[:200]}")
     except Exception as e:
-        print_error(f"Workflow creation failed: {e}")
-        return None
+        err(f"Lỗi tạo workflow {tool_id}: {e}")
+    return None
 
-def monitor_workflow_and_ai(workflow_id):
-    """Monitor workflow progress and AI auto-generation"""
-    print_step(4, f"Monitoring Workflow: {workflow_id}")
+def wait_workflow_complete(workflow_id):
+    start = time.time()
+    last_status = None
+    while True:
+        try:
+            r = requests.get(f"{CONTROLLER_URL}/api/workflows/{workflow_id}/status")
+            if r.status_code == 200:
+                js = r.json()
+                wf_status = js.get("workflow", {}).get("status")
+                progress = js.get("progress", {})
+                sub_jobs = js.get("sub_jobs", [])
+                if wf_status != last_status:
+                    info(f"Workflow {workflow_id} status: {wf_status} ({progress.get('completed',0)}/{progress.get('total',0)})")
+                    last_status = wf_status
+                if wf_status in ["completed", "failed", "partially_failed"] or (progress.get("total",0) > 0 and progress.get("completed",0) >= progress.get("total",0)):
+                    ok(f"Workflow {workflow_id} kết thúc: {wf_status}")
+                    return wf_status, sub_jobs
+            else:
+                warn(f"Status {r.status_code} khi lấy workflow {workflow_id}")
+        except Exception as e:
+            warn(f"Lỗi polling workflow {workflow_id}: {e}")
+        time.sleep(POLL_INTERVAL)
 
-    print_info("Watching for:")
-    print_info("  - Job completion")
-    print_info("  - AI analysis trigger")
-    print_info("  - Auto workflow creation")
+def get_completed_job(sub_jobs, tool_id):
+    for j in sub_jobs:
+        if j.get("tool") == tool_id and j.get("status") == "completed":
+            return j
+    for j in sub_jobs:
+        if j.get("tool") == tool_id:
+            return j
+    return None
 
-    last_job_count = 0
+def fetch_ai_suggestions(workflow_id, job_id, tool):
     try:
-        while True:
-            try:
-                # Get workflow status
-                response = requests.get(
-                    f"{CONTROLLER_URL}/api/workflows/{workflow_id}/status",
-  #              timeout=10
-                )
+        r = requests.get(f"{CONTROLLER_URL}/api/ai/analyze/{workflow_id}/{job_id}")
+        if r.status_code == 200:
+            js = r.json()
+            analyses = js.get("analyses", [])
+            suggestions = []
+            for a in analyses:
+                analysis = a.get("analysis", {})
+                sug = analysis.get("suggested_actions", []) or []
+                for s in sug:
+                    if s.get("type") == "run_tool":
+                        suggestions.append({
+                            "tool": s.get("tool"),
+                            "confidence": s.get("confidence", 0.0)
+                        })
+            merged = {}
+            for s in suggestions:
+                t = s["tool"]
+                if not t:
+                    continue
+                if t not in merged or s["confidence"] > merged[t]["confidence"]:
+                    merged[t] = s
+            result = sorted(merged.values(), key=lambda x: x["confidence"], reverse=True)
+            if result:
+                ok(f"AI đề xuất (từ {tool}): " + ", ".join(f"{x['tool']}({x['confidence']:.2f})" for x in result[:5]))
+            else:
+                warn(f"AI không đề xuất tool mới từ {tool}")
+            return result
+        warn(f"AI analysis lỗi HTTP {r.status_code}")
+    except Exception as e:
+        warn(f"Lỗi gọi AI analysis: {e}")
+    return []
 
-                if response.status_code == 200:
-                    result = response.json()
-                    workflow_status = result.get("workflow", {}).get("status", "unknown")
-                    progress = result.get("progress", {})
-                    sub_jobs = result.get("sub_jobs", [])
+def pick_next_tool(ai_suggestions, used):
+    for s in ai_suggestions:
+        if s["tool"] and s["tool"] not in used and s["tool"] in TOOLS_ORDER and s["confidence"] >= 0.3:
+            return s["tool"]
+    for t in TOOLS_ORDER:
+        if t not in used:
+            return t
+    return None
 
-                    completed = progress.get("completed", 0)
-                    total = progress.get("total", 0)
+def run_chain():
+    print_header("AI AUTO WORKFLOW CHAIN")
+#    if not test_rag():
+#        err("Dừng: RAG chưa sẵn sàng"); sys.exit(1)
+#    if not test_controller():
+#        err("Dừng: Controller AI chưa OK"); sys.exit(1)
 
-                    print(f"\r🔄 Status: {workflow_status} | Progress: {completed}/{total} | Jobs: {len(sub_jobs)}", end="", flush=True)
+    targets = DEFAULT_TARGETS
+    used_tools = set()
+    chain_history = []
+    current_tool = "port-scan"
+    iteration = 0
 
-                    # Check for new jobs (indicates AI auto-workflow)
-                    if len(sub_jobs) > last_job_count:
-                        new_jobs = len(sub_jobs) - last_job_count
-                        if last_job_count > 0:  # Not the initial jobs
-                            print_success(f"\n🤖 AI created {new_jobs} new jobs!")
-                            for job in sub_jobs[last_job_count:]:
-                                print_info(f"   - {job.get('tool', 'unknown')} (Job ID: {job.get('job_id', 'unknown')})")
-                        last_job_count = len(sub_jobs)
+    while iteration < MAX_CHAIN and current_tool:
+        iteration += 1
+        print_step(f"Iteration {iteration}: chạy {current_tool}")
+        wf_id = create_workflow(current_tool, targets, params=_default_params_for_tool(current_tool), desc=f"AI chain step {iteration} - {current_tool}")
+        if not wf_id:
+            err("Không tạo được workflow, dừng.")
+            break
+        status, sub_jobs = wait_workflow_complete(wf_id)
+        used_tools.add(current_tool)
 
-                    # Check for completion
-                    if workflow_status in ["completed", "failed", "partially_failed"] or (total > 0 and completed >= total):
-                        if workflow_status == "running" and total > 0 and completed == total:
-                            print_warning("\n⚠️  Workflow status still 'running' but all jobs finished -> treat as completed")
-                        print_success(f"\n✅ Workflow finished ({completed}/{total})")
-                        return True, sub_jobs
+        job = get_completed_job(sub_jobs, current_tool)
+        if not job:
+            warn(f"Không tìm thấy job hoàn tất cho {current_tool} => bỏ qua AI step")
+            current_tool = pick_next_tool([], used_tools)
+            continue
 
-                time.sleep(5)
+        ai_suggestions = fetch_ai_suggestions(wf_id, job.get("job_id"), current_tool)
+        next_tool = pick_next_tool(ai_suggestions, used_tools)
 
-            except KeyboardInterrupt:
-                print_warning("\n⏹ Stopped by user")
-                return False, []
-            except Exception as e:
-                print_error(f"\nError monitoring workflow: {e}")
-                time.sleep(5)
-    except KeyboardInterrupt:
-        print_warning("\n⏹ Stopped by user")
-        return False, []
+        chain_history.append({
+            "workflow_id": wf_id,
+            "tool": current_tool,
+            "status": status,
+            "suggestions": ai_suggestions
+        })
 
-def analyze_results(workflow_id, sub_jobs):
-    """Analyze the results of the demo"""
-    print_step(5, "Analyzing Demo Results")
+        if not next_tool:
+            ok("Chuỗi đã hoàn tất: không còn tool mới.")
+            break
+        current_tool = next_tool
 
-    initial_jobs = [job for job in sub_jobs if "port-scan" in job.get("tool", "")]
-    ai_generated_jobs = [job for job in sub_jobs if "port-scan" not in job.get("tool", "")]
+    print_header("TỔNG KẾT CHUỖI")
+    for i, step in enumerate(chain_history, 1):
+        sug_txt = ", ".join(f"{s['tool']}({s['confidence']:.2f})" for s in step["suggestions"][:3]) or "-"
+        print_colored(f"[{i}] {step['tool']} -> WF {step['workflow_id']} | AI: {sug_txt}", Colors.WHITE)
 
-    print_info(f"Initial port-scan jobs: {len(initial_jobs)}")
-    print_info(f"AI-generated jobs: {len(ai_generated_jobs)}")
-
-    if ai_generated_jobs:
-        print_success("🎉 AI Auto-Workflow is working!")
-        print_info("AI suggested these follow-up tools:")
-        for job in ai_generated_jobs:
-            tool = job.get("tool", "unknown")
-            status = job.get("status", "unknown")
-            print_info(f"  - {tool} ({status})")
+    info("Đã dùng tools: " + ", ".join(sorted(used_tools)))
+    remaining = [t for t in TOOLS_ORDER if t not in used_tools]
+    if remaining:
+        warn("Chưa chạy: " + ", ".join(remaining))
     else:
-        print_warning("No AI-generated jobs detected")
-        print_info("  - Port scan maybe found nothing interesting")
-        print_info("  - AI confidence low or auto workflow disabled")
+        ok("ĐÃ CHẠY HẾT DANH SÁCH TOOL")
 
-    # Try to get AI analysis for one of the completed jobs
-    for job in sub_jobs:
-        if job.get("status") == "completed":
-            try:
-                job_id = job.get("job_id")
-                response = requests.get(
-                    f"{CONTROLLER_URL}/api/ai/analyze/{workflow_id}/{job_id}",
-    #                timeout=30
-                )
-
-                if response.status_code == 200:
-                    analysis = response.json()
-                    print_success(f"AI Analysis for {job.get('tool')}:")
-
-                    for target_analysis in analysis.get("analyses", []):
-                        target = target_analysis.get("target")
-                        ai_result = target_analysis.get("analysis", {})
-                        summary = ai_result.get("summary", "No summary")
-                        suggestions = ai_result.get("suggested_actions", [])
-
-                        print_info(f"Target: {target}")
-                        print_info(f"Summary: {summary}")
-                        print_info(f"Suggestions: {len(suggestions)} tools recommended")
-
-                        for suggestion in suggestions[:3]:  # Show top 3
-                            tool = suggestion.get("tool", "unknown")
-                            confidence = suggestion.get("confidence", 0)
-                            print_info(f"  - {tool} (confidence: {confidence:.2f})")
-                    break
-
-            except Exception as e:
-                print_warning(f"Could not get AI analysis: {e}")
-
-def main():
-    """Main demo function"""
-    print_header("ScannerVPN AI RAG Integration Demo")
-    print_colored("This demo will test the complete AI integration workflow", Colors.WHITE)
-
-    # Pre-flight checks
-    if not test_rag_server():
-        print_error("RAG server is not available. Please start it first.")
-        sys.exit(1)
-
-    if not test_controller_ai_status():
-        print_error("Controller AI integration is not available.")
-        sys.exit(1)
-
-    # Create and monitor demo workflow
-    workflow_id = create_demo_workflow()
-    if not workflow_id:
-        print_error("Failed to create demo workflow")
-        sys.exit(1)
-
-    # Monitor workflow execution
-    print_info("Monitoring workflow (no time limit; press Ctrl+C to stop)...")
-    success, sub_jobs = monitor_workflow_and_ai(workflow_id)
-
-    # Analyze results
-    analyze_results(workflow_id, sub_jobs)
-
-    print_header("Demo Completed")
-    print_colored("Check controller logs for detailed AI analysis.", Colors.WHITE)
+def _default_params_for_tool(tool):
+    if tool == "port-scan":
+        return {"ports": "80,443,22,21,25,53,110,143,993,995", "scan_type": "-sS"}
+    if tool == "httpx-scan":
+        return {"status_code": True, "title": True, "tech_detect": True, "ports": "80,443,8080"}
+    if tool == "nuclei-scan":
+        return {"severity": ["medium","high","critical"], "rate_limit": 150}
+    if tool == "dirsearch-scan":
+        return {"extensions": "php,asp,aspx", "threads": 10, "recursive": False}
+    if tool == "wpscan-scan":
+        return {"enumerate": ["p","t","u"]}
+    if tool == "sqlmap-scan":
+        return {"batch": True, "level": 1, "risk": 1}
+    if tool == "bruteforce-scan":
+        return {"concurrency": 2}
+    return {}
 
 if __name__ == "__main__":
-    main()
+    run_chain()

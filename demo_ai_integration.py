@@ -257,7 +257,7 @@ def _default_params_for_tool(tool):
     if tool == "nuclei-scan":
         return {"severity": ["medium","high","critical"], "rate_limit": 150}
     if tool == "dirsearch-scan":
-        return {"extensions": "php,asp,aspx", "threads": 10, "recursive": False, "include_status": "200,204", "wordlist": "/app/dicc.txt"}
+        return {"extensions": "php,asp,aspx", "threads": 10, "recursive": False, "include_status": "200,204", "wordlist": "/app/dicc.txt", "scanner_count": 1}
     if tool == "wpscan-scan":
         return {"enumerate": ["p","t","u"]}
     if tool == "sqlmap-scan":

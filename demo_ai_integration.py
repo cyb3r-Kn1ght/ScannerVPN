@@ -1,4 +1,5 @@
 import requests, json, time, sys
+from urllib.parse import urlparse
 
 class Colors:
     GREEN = '\033[92m'; RED = '\033[91m'; YELLOW = '\033[93m'; BLUE = '\033[94m'
@@ -33,6 +34,40 @@ POLL_INTERVAL = 5
 MAX_WAIT_SECONDS = None
 MAX_CHAIN = len(TOOLS_ORDER)
 
+# Tools cần HTTP/HTTPS URLs
+WEB_TOOLS = [
+    "httpx-scan", "nuclei-scan", "dirsearch-scan", 
+    "wpscan-scan", "sqlmap-scan"
+]
+
+def prepare_targets_for_tool(targets, tool_id):
+    """
+    Chuẩn bị targets theo yêu cầu của từng tool:
+    - Web tools: cần http:// hoặc https:// prefix
+    - Network tools: chỉ cần IP/hostname
+    """
+    if tool_id in WEB_TOOLS:
+        # Ensure HTTP/HTTPS prefix for web tools
+        prepared = []
+        for target in targets:
+            if not target.startswith(('http://', 'https://')):
+                # Default to http:// if no protocol specified
+                prepared.append(f"http://{target}")
+            else:
+                prepared.append(target)
+        return prepared
+    else:
+        # Network tools (port-scan, dns-lookup) - remove protocol if present
+        prepared = []
+        for target in targets:
+            if target.startswith(('http://', 'https://')):
+                # Extract hostname/IP from URL
+                parsed = urlparse(target)
+                prepared.append(parsed.hostname or parsed.netloc)
+            else:
+                prepared.append(target)
+        return prepared
+
 def test_rag():
     print_step(1, "Kiểm tra RAG server")
     try:
@@ -60,8 +95,11 @@ def test_controller():
     return False
 
 def create_workflow(tool_id, targets, params=None, desc=None):
+    # Prepare targets cho tool cụ thể
+    prepared_targets = prepare_targets_for_tool(targets, tool_id)
+    
     body = {
-        "targets": targets,
+        "targets": prepared_targets,
         "steps": [{
             "tool_id": tool_id,
             "params": params or {}
@@ -73,7 +111,7 @@ def create_workflow(tool_id, targets, params=None, desc=None):
         if r.status_code in [200, 201]:
             js = r.json()
             wf = js.get("workflow_id")
-            ok(f"Tạo workflow ({tool_id}) => {wf}")
+            ok(f"Tạo workflow ({tool_id}) => {wf} | targets: {prepared_targets}")
             return wf
         err(f"Tạo workflow thất bại {tool_id}: {r.status_code} {r.text[:200]}")
     except Exception as e:
@@ -219,7 +257,7 @@ def _default_params_for_tool(tool):
     if tool == "nuclei-scan":
         return {"severity": ["medium","high","critical"], "rate_limit": 150}
     if tool == "dirsearch-scan":
-        return {"extensions": "php,asp,aspx", "threads": 10, "recursive": False}
+        return {"extensions": "php,asp,aspx", "threads": 10, "recursive": False, "include_status": "200,204", "wordlist": "/app/dicc.txt"}
     if tool == "wpscan-scan":
         return {"enumerate": ["p","t","u"]}
     if tool == "sqlmap-scan":

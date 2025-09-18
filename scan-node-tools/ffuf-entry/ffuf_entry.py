@@ -21,6 +21,12 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+# Import VPNManager only when needed for controller integration
+try:
+    from vpn_manager import VPNManager
+except ImportError:
+    VPNManager = None
+
 # ====== cấu hình mặc định cho wordlist ffuf ======
 DEFAULT_WORDS = [
     "login", "signin", "sign-in", "auth", "account/login", "user/login",
@@ -28,16 +34,37 @@ DEFAULT_WORDS = [
     "users/sign_in", "auth/login", "members/login", "portal/login"
 ]
 
+# ====== default parameter names for fuzzing ======
+DEFAULT_PARAMS = [
+    "q", "search", "query", "keyword", "term", "s", "filter", "sort", "order",
+    "id", "user_id", "uid", "account_id", "user", "username", "email",
+    "page", "limit", "offset", "per_page", "size", "count", "max", "min",
+    "category", "cat", "type", "status", "state", "action", "cmd", "command",
+    "file", "path", "dir", "folder", "name", "filename", "upload", "download",
+    "token", "csrf", "key", "api_key", "secret", "hash", "signature",
+    "callback", "redirect", "return", "next", "continue", "url", "link",
+    "debug", "test", "admin", "dev", "mode", "env", "config", "setting"
+]
+
 # ====== ffuf runner ======
-def run_ffuf(base_url, wordlist, rate, threads, codes, timeout, proxy):
+def run_ffuf(base_url, wordlist, rate, threads, codes, timeout, proxy, fuzz_mode="path", param_value="test"):
     """
-    Chạy ffuf: -u BASE/FUZZ -w wordlist -mc codes -t threads -rate rate -maxtime timeout -x proxy
-    Trả về list kết quả JSON (ffuf "results")
+    Chạy ffuf với các mode khác nhau:
+    - path: -u BASE/FUZZ -w wordlist (fuzz đường dẫn)
+    - param: -u BASE?FUZZ=value -w wordlist (fuzz parameter names)
     """
     out_json = tempfile.NamedTemporaryFile(delete=False, suffix=".json").name
+    
+    if fuzz_mode == "param":
+        # Fuzz parameter names: ?FUZZ=value
+        url_template = base_url.rstrip("/") + "?FUZZ=" + param_value
+    else:
+        # Default path fuzzing: /FUZZ
+        url_template = base_url.rstrip("/") + "/FUZZ"
+    
     cmd = [
         "ffuf",
-        "-u", base_url.rstrip("/") + "/FUZZ",
+        "-u", url_template,
         "-w", wordlist,
         "-of", "json", "-o", out_json,
         "-mc", codes,
@@ -201,6 +228,10 @@ def main():
     )
     ap.add_argument("--url", required=True, help="Base URL, ví dụ: https://target.tld")
     ap.add_argument("--wordlist", help="Wordlist endpoints cho ffuf; nếu không, dùng danh sách mặc định")
+    ap.add_argument("--fuzz-mode", choices=["path", "param"], default="path", 
+                    help="Fuzzing mode: path (fuzz /FUZZ) hoặc param (fuzz ?FUZZ=value)")
+    ap.add_argument("--param-value", default="test", 
+                    help="Giá trị parameter khi fuzz param names (default: test)")
     ap.add_argument("--rate", type=int, default=50, help="req/s cho ffuf (default 50)")
     ap.add_argument("--threads", type=int, default=50, help="threads ffuf (default 50)")
     ap.add_argument("--codes", default="200,301,302,401,403", help="HTTP codes quan tâm để giữ kết quả")
@@ -230,13 +261,154 @@ def main():
     if args.wordlist and os.path.exists(args.wordlist):
         wl = args.wordlist
     else:
+        # Chọn wordlist mặc định theo mode
+        if args.fuzz_mode == "param":
+            default_words = DEFAULT_PARAMS
+        else:
+            default_words = DEFAULT_WORDS
+            
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
-        tmp.write(("\n".join(DEFAULT_WORDS)).encode("utf-8"))
+        tmp.write(("\n".join(default_words)).encode("utf-8"))
         tmp.close()
         wl = tmp.name
 
     # 1) Chạy ffuf để lấy candidates
-    ffuf_results = run_ffuf(base_url, wl, args.rate, args.threads, args.codes, args.timeout, args.proxy)
+    ffuf_results = run_ffuf(base_url, wl, args.rate, args.threads, args.codes, 
+                           args.timeout, args.proxy, args.fuzz_mode, args.param_value)
+    
+    if args.fuzz_mode == "param":
+        # Với parameter fuzzing, gửi kết quả về controller như các tool khác
+        print("[*] Starting Parameter Fuzzing with VPN...")
+        
+        # Setup VPN trước khi scan (copy logic từ dns_lookup.py)
+        if VPNManager is None:
+            print("[!] VPNManager not available, continuing without VPN...")
+            vpn_connected = False
+            network_info = {}
+        else:
+            vpn_manager = VPNManager()
+            vpn_connected = False
+            network_info = {}
+        
+        # Lấy VPN assignment từ Controller (nếu có)
+        assigned_vpn = None
+        controller_url = os.getenv("CONTROLLER_CALLBACK_URL")
+        vpn_assignment = os.getenv("VPN_ASSIGNMENT")
+        job_id = os.getenv("JOB_ID")
+        workflow_id = os.getenv("WORKFLOW_ID")
+        
+        if vpn_assignment:
+            try:
+                assigned_vpn = json.loads(vpn_assignment)
+                print(f"[*] Received VPN assignment from Controller: {assigned_vpn.get('hostname', 'Unknown')}")
+            except json.JSONDecodeError as e:
+                print(f"[!] Failed to parse VPN assignment: {e}")
+        
+        # Setup VPN
+        vpn_profile_info = None
+        if VPNManager is not None:
+            try:
+                print("[*] Checking initial network status...")
+                initial_info = vpn_manager.get_network_info()
+                print(f"[*] Initial IP: {initial_info['public_ip']}")
+
+                if assigned_vpn:
+                    if vpn_manager.setup_specific_vpn(assigned_vpn):
+                        print(f"[+] Connected to assigned VPN: {assigned_vpn.get('hostname', 'Unknown')}")
+                        vpn_manager.print_vpn_status()
+                        network_info = vpn_manager.get_network_info()
+                        vpn_connected = True
+                        vpn_profile_info = assigned_vpn
+                    else:
+                        print("[!] Failed to connect to assigned VPN, trying random...")
+                if not vpn_connected:
+                    print("[*] No VPN assignment from Controller or failed, using random VPN...")
+                    if vpn_manager.setup_random_vpn():
+                        print("[+] VPN setup completed!")
+                        vpn_manager.print_vpn_status()
+                        network_info = vpn_manager.get_network_info()
+                        vpn_connected = True
+                        vpn_profile_info = {
+                            "filename": network_info.get("vpn_filename", "random"),
+                            "hostname": network_info.get("vpn_hostname", "random")
+                        }
+                    else:
+                        print("[!] VPN connection failed, continuing without VPN...")
+
+                # Gửi thông báo connect VPN về controller
+                if vpn_connected and controller_url and vpn_profile_info:
+                    try:
+                        payload = {
+                            "filename": vpn_profile_info.get("filename"),
+                            "action": "connect",
+                            "scanner_id": job_id
+                        }
+                        print(f"[+] Notify controller: connect {payload}")
+                        resp = requests.post(f"{controller_url}/api/vpn_profiles/update", json=payload, timeout=10)
+                        print(f"[+] Controller connect response: {resp.status_code}")
+                    except Exception as notify_err:
+                        print(f"[!] Failed to notify controller connect: {notify_err}")
+            except Exception as e:
+                print(f"[!] VPN setup error: {e}, continuing without VPN...")
+
+        try:
+            # Chạy ffuf parameter fuzzing
+            print(f"Parameter fuzzing starting for URL: {base_url}")
+            candidates = [r.get("url") or r.get("input") for r in ffuf_results if r.get("url") or r.get("input")]
+            
+            # Gửi kết quả về Controller
+            if controller_url:
+                try:
+                    has_findings = bool(ffuf_results)
+                    payload = {
+                        "target": base_url,
+                        "resolved_ips": [],
+                        "open_ports": [],
+                        "workflow_id": workflow_id,
+                        "has_findings": has_findings,
+                        "scan_metadata": {
+                            "tool": "ffuf-entry",
+                            "job_id": job_id,
+                            "vpn_used": vpn_connected,
+                            "scan_ip": network_info.get("public_ip", "Unknown"),
+                            "vpn_local_ip": network_info.get("local_ip"),
+                            "tun_interface": network_info.get("tun_interface", False),
+                            "fuzz_mode": "param",
+                            "results": ffuf_results,
+                            "candidates": candidates,
+                            "total_findings": len(ffuf_results)
+                        }
+                    }
+                    print(f"Sending parameter fuzzing results to Controller: {len(ffuf_results)} findings")
+                    response = requests.post(f"{controller_url}/api/scan_results", json=payload)
+                    print(f"Controller response: {response.status_code}")
+                except Exception as e:
+                    print(f"Error sending results to Controller: {e}")
+            
+            print("Parameter fuzzing completed")
+            
+        finally:
+            # Gửi thông báo disconnect VPN về controller
+            if vpn_connected and controller_url and vpn_profile_info:
+                try:
+                    payload = {
+                        "filename": vpn_profile_info.get("filename"),
+                        "action": "disconnect",
+                        "scanner_id": job_id
+                    }
+                    print(f"[+] Notify controller: disconnect {payload}")
+                    resp = requests.post(f"{controller_url}/api/vpn_profiles/update", json=payload, timeout=10)
+                    print(f"[+] Controller disconnect response: {resp.status_code}")
+                except Exception as notify_err:
+                    print(f"[!] Failed to notify controller disconnect: {notify_err}")
+            # Cleanup VPN
+            if vpn_connected and VPNManager is not None:
+                print("[*] Disconnecting VPN...")
+                vpn_manager.disconnect_vpn()
+        
+        return
+
+    # Mode path - tiếp tục logic cũ cho login form detection
     candidates = pick_login_candidates(ffuf_results)
 
     # 2) Parse form từng candidate

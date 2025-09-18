@@ -188,6 +188,14 @@ class WorkflowService:
             # Kết quả từ bf_runner.py được lưu trong key 'findings'
             return meta.get("findings") or []
 
+        def ffuf_flatten(r):
+            meta = r.scan_metadata or {}
+            # Kết quả từ ffuf_entry.py
+            if meta.get("fuzz_mode") == "param":
+                return meta.get("results") or meta.get("candidates") or []
+            else:
+                return meta.get("results") or meta.get("targets") or []
+
         tool_result_map = {
             "nuclei-scan": lambda r: [nuclei_flatten(f) for f in (r.scan_metadata.get("nuclei_results") or [])],
             "port-scan": portscan_flatten,
@@ -196,7 +204,8 @@ class WorkflowService:
             "dirsearch-scan": dirsearch_flatten,
             "wpscan-scan": wpscan_flatten,
             "sqlmap-scan": sqlmap_flatten,
-            "bruteforce-scan": bruteforce_flatten
+            "bruteforce-scan": bruteforce_flatten,
+            "ffuf-entry": ffuf_flatten
         }
 
         sub_job_details = []

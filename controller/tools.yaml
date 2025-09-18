@@ -30,3 +30,7 @@ tools:
   - name: bruteforce-scan
     image: nguyenminhnguyen/bruteforce:latest
     args: [] # Bruteforce tool đọc job từ stdin, không cần args
+
+  - name: ffuf-entry
+    image: nguyenminhnguyen/ffuf-entry:latest
+    args: ["--url"]

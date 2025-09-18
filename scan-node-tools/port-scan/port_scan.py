@@ -50,8 +50,13 @@ def scan(target, options=None):
         # Nếu ports là dạng range (vd: '1-5000'), hoặc list, hoặc chuỗi số, đều truyền đúng cho nmap
         if ports == "-":
             cmd = ['nmap', scan_type, '-p-', '-oX', temp_path, target]
+        elif ports.isdigit() and str(ports).startswith('top-'):
+            # Chỉ dùng --top-ports nếu có prefix 'top-'
+            top_count = ports.replace('top-', '')
+            cmd = ['nmap', scan_type, '--top-ports', top_count, '-oX', temp_path, target]
         elif ports.isdigit():
-            cmd = ['nmap', scan_type, '--top-ports', ports, '-oX', temp_path, target]
+            # Single port number - use -p instead of --top-ports
+            cmd = ['nmap', scan_type, '-p', str(ports), '-oX', temp_path, target]
         elif '-' in str(ports) and all(x.isdigit() for x in str(ports).replace('-',',').split(',')):
             # Nếu là range, truyền nguyên cho nmap
             cmd = ['nmap', scan_type, '-p', str(ports), '-oX', temp_path, target]
@@ -65,8 +70,13 @@ def scan(target, options=None):
         try:
             if ports == "-":
                 cmd = ['nmap', '-sT', '-p-', '-oX', temp_path, target]
+            elif ports.isdigit() and str(ports).startswith('top-'):
+                # Chỉ dùng --top-ports nếu có prefix 'top-'
+                top_count = ports.replace('top-', '')
+                cmd = ['nmap', '-sT', '--top-ports', top_count, '-oX', temp_path, target]
             elif ports.isdigit():
-                cmd = ['nmap', '-sT', '--top-ports', ports, '-oX', temp_path, target]
+                # Single port number - use -p instead of --top-ports
+                cmd = ['nmap', '-sT', '-p', str(ports), '-oX', temp_path, target]
             elif '-' in str(ports) and all(x.isdigit() for x in str(ports).replace('-',',').split(',')):
                 cmd = ['nmap', '-sT', '-p', str(ports), '-oX', temp_path, target]
             else:
@@ -87,8 +97,13 @@ def scan(target, options=None):
         try:
             if ports == "-":
                 cmd = ['nmap', '-sT', '-p-', '-oX', temp_path, target]
+            elif ports.isdigit() and str(ports).startswith('top-'):
+                # Chỉ dùng --top-ports nếu có prefix 'top-'
+                top_count = ports.replace('top-', '')
+                cmd = ['nmap', '-sT', '--top-ports', top_count, '-oX', temp_path, target]
             elif ports.isdigit():
-                cmd = ['nmap', '-sT', '--top-ports', ports, '-oX', temp_path, target]
+                # Single port number - use -p instead of --top-ports
+                cmd = ['nmap', '-sT', '-p', str(ports), '-oX', temp_path, target]
             elif '-' in str(ports) and all(x.isdigit() for x in str(ports).replace('-',',').split(',')):
                 cmd = ['nmap', '-sT', '-p', str(ports), '-oX', temp_path, target]
             else:

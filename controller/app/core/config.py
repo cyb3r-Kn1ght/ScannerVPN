@@ -7,8 +7,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./data/scan_results.db")
 
     # Service URLs
-    SCANNER_NODE_URL: str = os.getenv("SCANNER_NODE_URL", "http://scanner-node-api:8000")
-    CONTROLLER_CALLBACK_URL: str = os.getenv("CONTROLLER_CALLBACK_URL", "http://controller:8000")
+    SCANNER_NODE_URL: str = os.getenv("SCANNER_NODE_URL", "http://10.102.199.221:8000")
+    CONTROLLER_CALLBACK_URL: str = os.getenv("CONTROLLER_CALLBACK_URL", "http://10.102.199.42:8000")
     VPN_PROXY_NODE: str = os.getenv("VPN_PROXY_NODE", "http://10.102.199.37:8000")
 
     # AI RAG Configuration

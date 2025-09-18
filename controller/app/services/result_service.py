@@ -106,7 +106,12 @@ class ResultService:
             tgt = r.target
             if tgt not in summary_by_target:
                 summary_by_target[tgt] = {
-                    "target": tgt, "dns_records": [], "open_ports": [], "web_technologies": set(), "vulnerabilities": [], "dirsearch_results": []
+                    "target": tgt, 
+                    "dns_records": [], 
+                    "open_ports": [], 
+                    "web_technologies": set(), 
+                    "vulnerabilities": [], 
+                    "dirsearch_results": []
                 }
             if r.resolved_ips:
                 summary_by_target[tgt]["dns_records"].extend(r.resolved_ips)
@@ -146,6 +151,8 @@ class ResultService:
         if not job:
             raise HTTPException(status_code=404, detail="Scan job not found")
 
+        print(f"[DEBUG] Job tool: {job.tool}, workflow_id: {job.workflow_id}")
+        
         # Nếu là port-scan và thuộc workflow, thực hiện merge kết quả các sub-job cùng nhóm
         if job.tool == "port-scan" and job.workflow_id:
             sub_jobs = db.query(ScanJob).filter(
@@ -180,16 +187,20 @@ class ResultService:
                 },
                 "results": merged_ports[start:end]
             }
+            
         # Nếu là dirsearch-scan và thuộc workflow, thực hiện merge dirsearch_results của tất cả sub-job dirsearch-scan cùng workflow
         if job.tool == "dirsearch-scan" and job.workflow_id:
+            print(f"[DEBUG] Merging dirsearch results for workflow {job.workflow_id}")
             sub_jobs = db.query(ScanJob).filter(
                 ScanJob.workflow_id == job.workflow_id,
                 ScanJob.tool == "dirsearch-scan"
             ).all()
+            print(f"[DEBUG] Found {len(sub_jobs)} dirsearch sub-jobs in workflow")
             job_ids = [j.job_id for j in sub_jobs]
             scan_results = db.query(ScanResult).filter(
                 ScanResult.scan_metadata.op('->>')('job_id').in_(job_ids)
             ).all()
+            print(f"[DEBUG] Found {len(scan_results)} scan results to merge")
             # Merge dirsearch_results
             all_findings = []
             for r in scan_results:
@@ -216,7 +227,8 @@ class ResultService:
                     "scan_ip": getattr(job, "scan_ip", "Unknown"),
                     "vpn_local_ip": getattr(job, "vpn_local_ip", None),
                     "tun_interface": getattr(job, "tun_interface", False),
-                    "dirsearch_results": all_findings[start:end]
+                    "dirsearch_results": all_findings[start:end],
+                    "total_findings": total
                 }
             }
             return {

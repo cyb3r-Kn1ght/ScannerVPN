@@ -226,7 +226,8 @@ def main():
     ap = argparse.ArgumentParser(
         description="ffuf entry → sinh targets HTTP / hoặc job.json hoàn chỉnh cho bf_runner"
     )
-    ap.add_argument("--url", required=True, help="Base URL, ví dụ: https://target.tld")
+    ap.add_argument("--url", help="Base URL, ví dụ: https://target.tld (có thể lấy từ TARGETS env)")
+    ap.add_argument("targets", nargs="*", help="Target URLs (fallback nếu không có --url hoặc TARGETS)")
     ap.add_argument("--wordlist", help="Wordlist endpoints cho ffuf; nếu không, dùng danh sách mặc định")
     ap.add_argument("--fuzz-mode", choices=["path", "param"], default="path", 
                     help="Fuzzing mode: path (fuzz /FUZZ) hoặc param (fuzz ?FUZZ=value)")
@@ -254,10 +255,29 @@ def main():
     ap.add_argument("--no-stop-on-success", dest="stop_on_success", action="store_false")
 
     args = ap.parse_args()
-    base_url = args.url
+    
+    # Determine base_url from sources (priority: --url > TARGETS env > positional args)
+    base_url = None
+    if args.url:
+        base_url = args.url
+    else:
+        # Check environment variable TARGETS (như các tool khác)
+        targets_env = os.getenv("TARGETS", "").strip()
+        if targets_env:
+            targets_list = [t.strip() for t in targets_env.split(",") if t.strip()]
+            if targets_list:
+                base_url = targets_list[0]
+        # Fallback to positional arguments
+        if not base_url and args.targets:
+            base_url = args.targets[0]
+    
+    if not base_url:
+        print("ERROR: No URL provided. Use --url, TARGETS env var, or positional argument.", file=sys.stderr)
+        sys.exit(1)
+        
     verify_ssl = not args.insecure
 
-    # Wordlist endpoint cho ffuf
+    # 1) Chọn wordlist
     if args.wordlist and os.path.exists(args.wordlist):
         wl = args.wordlist
     else:
@@ -272,12 +292,8 @@ def main():
         tmp.close()
         wl = tmp.name
 
-    # 1) Chạy ffuf để lấy candidates
-    ffuf_results = run_ffuf(base_url, wl, args.rate, args.threads, args.codes, 
-                           args.timeout, args.proxy, args.fuzz_mode, args.param_value)
-    
     if args.fuzz_mode == "param":
-        # Với parameter fuzzing, gửi kết quả về controller như các tool khác
+        # Với parameter fuzzing, setup VPN trước rồi mới chạy ffuf
         print("[*] Starting Parameter Fuzzing with VPN...")
         
         # Setup VPN trước khi scan (copy logic từ dns_lookup.py)
@@ -352,8 +368,10 @@ def main():
                 print(f"[!] VPN setup error: {e}, continuing without VPN...")
 
         try:
-            # Chạy ffuf parameter fuzzing
+            # Chạy ffuf parameter fuzzing AFTER VPN setup
             print(f"Parameter fuzzing starting for URL: {base_url}")
+            ffuf_results = run_ffuf(base_url, wl, args.rate, args.threads, args.codes, 
+                                   args.timeout, args.proxy, args.fuzz_mode, args.param_value)
             candidates = [r.get("url") or r.get("input") for r in ffuf_results if r.get("url") or r.get("input")]
             
             # Gửi kết quả về Controller
@@ -409,6 +427,9 @@ def main():
         return
 
     # Mode path - tiếp tục logic cũ cho login form detection
+    # Chạy ffuf cho path mode
+    ffuf_results = run_ffuf(base_url, wl, args.rate, args.threads, args.codes, 
+                           args.timeout, args.proxy, args.fuzz_mode, args.param_value)
     candidates = pick_login_candidates(ffuf_results)
 
     # 2) Parse form từng candidate

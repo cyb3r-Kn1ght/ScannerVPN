@@ -132,10 +132,14 @@ def build_profile_from_form(base_url, url, html, verify_ssl=True):
     soup = BeautifulSoup(html, "lxml")
     forms = soup.find_all("form")
     targets = []
+    
+    print(f"[DEBUG] Found {len(forms)} forms in HTML from {url}")
 
-    for form in forms:
+    for i, form in enumerate(forms):
+        print(f"[DEBUG] Processing form {i+1} from {url}")
         pwd_input = form.select_one("input[type=password]")
         if not pwd_input or not pwd_input.get("name"):
+            print(f"[DEBUG] Form {i+1} has no password field, skipping")
             continue
 
         inputs = [{
@@ -143,10 +147,14 @@ def build_profile_from_form(base_url, url, html, verify_ssl=True):
             "type": (inp.get("type") or "text").lower(),
             "value": inp.get("value") or ""
         } for inp in form.find_all("input")]
+        
+        print(f"[DEBUG] Form {i+1} has {len(inputs)} inputs")
 
         user_field = choose_username_field(inputs)
         pass_field = pwd_input.get("name")
+        print(f"[DEBUG] Form {i+1} - user_field: {user_field}, pass_field: {pass_field}")
         if not user_field or not pass_field:
+            print(f"[DEBUG] Form {i+1} missing required fields, skipping")
             continue
 
         method = (form.get("method") or "POST").upper()
@@ -191,10 +199,14 @@ def build_profile_from_form(base_url, url, html, verify_ssl=True):
         profile["http"]["pre_login"] = pre_login
 
         targets.append(profile)
+        print(f"[DEBUG] Created login profile for form {i+1} from {url}")
+    
+    print(f"[DEBUG] Total {len(targets)} login profiles created from {url}")
     return targets
 
 # ====== tải HTML một URL ======
 def fetch_html(url, headers=None, proxy=None, verify_ssl=True, timeout=10):
+    print(f"[DEBUG] Fetching HTML from: {url}")
     s = requests.Session()
     if headers:
         s.headers.update(headers)
@@ -202,11 +214,16 @@ def fetch_html(url, headers=None, proxy=None, verify_ssl=True, timeout=10):
         s.proxies = proxy if isinstance(proxy, dict) else {"http": proxy, "https": proxy}
     try:
         r = s.get(url, timeout=timeout, verify=verify_ssl, allow_redirects=True)
+        print(f"[DEBUG] HTTP {r.status_code} for {url}")
         ct = (r.headers.get("Content-Type") or "").lower()
+        print(f"[DEBUG] Content-Type: {ct}")
         if "text/html" in ct or "<html" in r.text.lower():
+            print(f"[DEBUG] HTML content length: {len(r.text)} chars")
             return r.text
+        print(f"[DEBUG] Not HTML content, skipping")
         return ""
-    except Exception:
+    except Exception as e:
+        print(f"[DEBUG] Error fetching {url}: {e}")
         return ""
 
 # ====== helper ======
@@ -255,6 +272,31 @@ def main():
     ap.add_argument("--no-stop-on-success", dest="stop_on_success", action="store_false")
 
     args = ap.parse_args()
+    
+    # Check for fuzz mode from SCAN_OPTIONS (controller integration)
+    scan_options_env = os.getenv("SCAN_OPTIONS", "").strip()
+    if scan_options_env:
+        try:
+            scan_options = json.loads(scan_options_env)
+            fuzz_mode_option = scan_options.get("fuzz_mode", "").lower()
+            if fuzz_mode_option in ["param", "parameter"]:
+                args.fuzz_mode = "param"
+            elif fuzz_mode_option in ["path"]:
+                args.fuzz_mode = "path"
+        except json.JSONDecodeError:
+            pass
+    
+    # Also check for legacy FUZZ_MODE env var
+    env_fuzz_mode = os.getenv("FUZZ_MODE", "").strip().lower()
+    if env_fuzz_mode in ["param", "parameter"]:
+        args.fuzz_mode = "param"
+    elif env_fuzz_mode in ["path"]:
+        args.fuzz_mode = "path"
+    
+    print(f"[DEBUG] args.fuzz_mode = {args.fuzz_mode}")
+    print(f"[DEBUG] SCAN_OPTIONS env = {scan_options_env}")
+    print(f"[DEBUG] FUZZ_MODE env = {env_fuzz_mode}")
+    print(f"[DEBUG] Command line args: {sys.argv}")
     
     # Determine base_url from sources (priority: --url > TARGETS env > positional args)
     base_url = None
@@ -440,10 +482,15 @@ def main():
     # Parse form từng candidate
     targets = []
     for url in candidates:
+        print(f"[DEBUG] Processing candidate: {url}")
         html = fetch_html(url, proxy=args.proxy, verify_ssl=verify_ssl)
         if not html:
+            print(f"[DEBUG] Skipping {url} - no HTML content")
             continue
-        targets.extend(build_profile_from_form(base_url, url, html, verify_ssl=verify_ssl))
+        print(f"[DEBUG] Got HTML for {url}, parsing forms...")
+        form_targets = build_profile_from_form(base_url, url, html, verify_ssl=verify_ssl)
+        print(f"[DEBUG] Found {len(form_targets)} form targets from {url}")
+        targets.extend(form_targets)
 
     print(f"[DEBUG] Path mode - final targets count: {len(targets)}")
     

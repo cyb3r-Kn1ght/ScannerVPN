@@ -427,12 +427,17 @@ def main():
         return
 
     # Mode path - tiếp tục logic cũ cho login form detection
+    print(f"[DEBUG] Path mode - base_url: {base_url}, wl: {wl}")
+    
     # Chạy ffuf cho path mode
     ffuf_results = run_ffuf(base_url, wl, args.rate, args.threads, args.codes, 
                            args.timeout, args.proxy, args.fuzz_mode, args.param_value)
+    print(f"[DEBUG] Path mode - ffuf_results count: {len(ffuf_results) if ffuf_results else 0}")
+    
     candidates = pick_login_candidates(ffuf_results)
+    print(f"[DEBUG] Path mode - candidates: {candidates}")
 
-    # 2) Parse form từng candidate
+    # Parse form từng candidate
     targets = []
     for url in candidates:
         html = fetch_html(url, proxy=args.proxy, verify_ssl=verify_ssl)
@@ -440,7 +445,9 @@ def main():
             continue
         targets.extend(build_profile_from_form(base_url, url, html, verify_ssl=verify_ssl))
 
-    # 3) Xuất JSON
+    print(f"[DEBUG] Path mode - final targets count: {len(targets)}")
+    
+    # Xuất JSON cho path mode
     if not args.emit_job:
         payload = {"job_id": f"ffuf-entry-{int(time.time())}", "targets": targets}
     else:

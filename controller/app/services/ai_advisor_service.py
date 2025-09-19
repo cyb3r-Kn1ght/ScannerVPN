@@ -22,8 +22,8 @@ class AIAdvisorService:
         try:
             response = requests.post(
                 f"{self.rag_url}/rag_query",
-                json={"query": query},
-                timeout=30
+                json={"query": query}
+                # Không set timeout - để RAG chạy bao lâu cũng được
             )
             response.raise_for_status()
             result = response.json()

@@ -63,11 +63,18 @@ class ResultService:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     
-                    auto_service = AutoWorkflowService(self.db)
-                    loop.run_until_complete(
-                        auto_service.analyze_and_suggest_next_steps(workflow_id, job_id)
-                    )
-                    loop.close()
+                    # Tạo session mới cho thread này
+                    from app.db.session import SessionLocal
+                    thread_db = SessionLocal()
+                    
+                    try:
+                        auto_service = AutoWorkflowService(thread_db)
+                        loop.run_until_complete(
+                            auto_service.analyze_and_suggest_next_steps(workflow_id, job_id)
+                        )
+                    finally:
+                        thread_db.close()
+                        loop.close()
                 except Exception as e:
                     logging.getLogger(__name__).error(f"AI analysis thread failed: {e}", exc_info=True)
             

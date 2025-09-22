@@ -253,8 +253,8 @@ if __name__ == "__main__":
                         "open_ports": [],
                         "workflow_id": workflow_id,
                         "http_metadata": result["metadata"],
-                        "http_endpoints": result["all_endpoints"],
-                        "httpx_results": result["all_endpoints"],
+                        "http_endpoints": result["all_endpoints"],  # Processed/clean data
+                        "httpx_results": [r["raw"] for r in result["all_endpoints"]],  # Raw httpx output only
                         "has_findings": has_findings,
                         "scan_metadata": {
                             "tool": "httpx-scan",

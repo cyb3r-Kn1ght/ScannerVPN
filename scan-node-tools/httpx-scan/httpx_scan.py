@@ -266,7 +266,8 @@ if __name__ == "__main__":
                             "scan_options": options
                         }
                     }
-                    print(f"Sending result to Controller: {payload}")
+                    print(f"Sending result to Controller:")
+                    print(json.dumps(payload, indent=2))
                     response = requests.post(f"{controller_url}/api/scan_results", json=payload)
                     print(f"Controller response: {response.status_code}")
             except Exception as e:

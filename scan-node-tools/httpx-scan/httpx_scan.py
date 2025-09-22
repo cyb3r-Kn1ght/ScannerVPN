@@ -37,12 +37,28 @@ def scan(target, options=None):
             cmd.append('-title')
         if options.get("ip"):
             cmd.append('-ip')
-        if options.get("web_server"):
+        if options.get("web_server") or options.get("server"):
             cmd.append('-web-server')
         if options.get("content_length"):
             cmd.append('-content-length')
         if options.get("tech_detect"):
             cmd.append('-tech-detect')
+        if options.get("location"):
+            cmd.append('-location')
+        if options.get("cname"):
+            cmd.append('-cname')
+        if options.get("cdn"):
+            cmd.append('-cdn')
+        if options.get("threads"):
+            cmd.extend(['-threads', str(options["threads"])])
+        if options.get("method"):
+            cmd.extend(['-method', options["method"]])
+        if options.get("response_time"):
+            cmd.append('-response-time')
+        if options.get("content_type"):
+            cmd.append('-content-type')
+        if options.get("response_size"):
+            cmd.append('-response-size')
     
     try:
         print(f"[*] Running httpx command: {' '.join(cmd[:4])}... {target}")
@@ -63,12 +79,23 @@ def scan(target, options=None):
                     'port': data.get('port'),
                     'service': data.get('service'),
                     'responseHeaders': data.get('headers', {}),
-                    'statusCode': data.get('status-code'),
-                    'protocol': data.get('http-protocol'),
+                    'statusCode': data.get('status-code') or data.get('status_code'),
+                    'protocol': data.get('http-protocol') or data.get('scheme'),
                     'url': data.get('url'),
                     'title': data.get('title'),
-                    'content_length': data.get('content-length'),
-                    'webserver': data.get('webserver')
+                    'content_length': data.get('content-length') or data.get('content_length'),
+                    'webserver': data.get('webserver') or data.get('web-server'),
+                    'location': data.get('location'),
+                    'cname': data.get('cname'),
+                    'cdn': data.get('cdn'),
+                    'tech': data.get('tech', []),  # tech-detect results
+                    'method': data.get('method'),
+                    'host': data.get('host'),
+                    'path': data.get('path'),
+                    'response_time': data.get('response-time') or data.get('response_time'),
+                    'content_type': data.get('content-type') or data.get('content_type'),
+                    'response_size': data.get('response-size') or data.get('response_size'),
+                    'raw': data  # Keep raw data for debugging/completeness
                 })
             except json.JSONDecodeError as e:
                 print(f"[!] Failed to parse line: {line}, error: {e}")

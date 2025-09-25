@@ -271,20 +271,33 @@ class WorkflowService:
             logger.warning(f"Failed to assign VPN for workflow: {e}")
             return None
 
-    async def create_and_dispatch_workflow(self, *, workflow_in: workflow_schema.WorkflowRequest) -> dict:
-        """Tạo và thực thi một workflow quét mới."""
-        logger.info(f"Creating workflow for targets: {workflow_in.targets}")
+    async def create_and_dispatch_workflow(self, *, workflow_in: workflow_schema.WorkflowRequest, workflow_id: str = None, workflow_phase: int = None) -> dict:
+        """Tạo và thực thi một workflow quét mới hoặc thêm sub-job vào workflow cũ."""
+        logger.info(f"Creating/Updating workflow for targets: {workflow_in.targets}")
 
-        workflow_id = f"workflow-{uuid4().hex[:8]}"
-        workflow_db = crud_workflow.create_workflow(db=self.db, workflow_in=workflow_in, workflow_id=workflow_id)
+        # Nếu có workflow_id thì lấy từ DB, không tạo mới
+        if workflow_id:
+            workflow_db = self.db.query(WorkflowJob).filter(WorkflowJob.workflow_id == workflow_id).first()
+            if not workflow_db:
+                raise HTTPException(status_code=404, detail="Workflow not found")
+            # Nếu workflow đã completed, chuyển về running
+            if workflow_db.status in ["completed", "partially_failed"]:
+                crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"status": "running"})
+            # Tăng total_steps
+            old_total = workflow_db.total_steps or 0
+        else:
+            workflow_id = f"workflow-{uuid4().hex[:8]}"
+            workflow_db = crud_workflow.create_workflow(db=self.db, workflow_in=workflow_in, workflow_id=workflow_id)
+            old_total = 0
 
         vpn_assignment = await self._assign_vpn_to_workflow(workflow_in)
         if vpn_assignment:
             crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"vpn_assignment": vpn_assignment, "vpn_country": vpn_assignment.get('country')})
             logger.info(f"Assigned VPN {vpn_assignment.get('hostname')} to workflow {workflow_id}")
 
-        sub_jobs = self._create_sub_jobs_in_db(workflow_db, workflow_in.steps, vpn_assignment)
-        crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"total_steps": len(sub_jobs)})
+        # Truyền workflow_phase khi tạo sub-job
+        sub_jobs = self._create_sub_jobs_in_db(workflow_db, workflow_in.steps, vpn_assignment, workflow_phase=workflow_phase)
+        crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"total_steps": old_total + len(sub_jobs)})
 
         # Track detailed job submission results
         successful_submissions, failed_submissions = [], []
@@ -299,7 +312,8 @@ class WorkflowService:
                     "job_id": job.job_id,
                     "tool": job.tool,
                     "targets": job.targets,
-                    "scanner_job": scanner_response.get("job_name")
+                    "scanner_job": scanner_response.get("job_name"),
+                    "workflow_phase": getattr(job, "workflow_phase", None)
                 })
             except Exception as e:
                 error_message = str(e)
@@ -309,7 +323,8 @@ class WorkflowService:
                     "job_id": job.job_id,
                     "tool": job.tool,
                     "targets": job.targets,
-                    "error": error_message
+                    "error": error_message,
+                    "workflow_phase": getattr(job, "workflow_phase", None)
                 })
 
         status = "running" if successful_submissions else "failed"
@@ -327,7 +342,7 @@ class WorkflowService:
             "workflow_id": workflow_id,
             "status": status,
             "strategy": getattr(workflow_in, "strategy", None),
-            "total_steps": len(sub_jobs),
+            "total_steps": old_total + len(sub_jobs),
             "total_targets": len(getattr(workflow_in, "targets", []) or []),
             "total_tools": len(getattr(workflow_in, "steps", []) or []),
             "successful_submissions": len(successful_submissions),
@@ -337,7 +352,7 @@ class WorkflowService:
             "vpn_assignment": vpn_assignment_resp
         }
 
-    def _create_sub_jobs_in_db(self, workflow_db: WorkflowJob, steps: list[workflow_schema.WorkflowStep], vpn_assignment: dict | None) -> list[ScanJob]:
+    def _create_sub_jobs_in_db(self, workflow_db: WorkflowJob, steps: list[workflow_schema.WorkflowStep], vpn_assignment: dict | None, workflow_phase: int = None) -> list[ScanJob]:
         """Tạo các bản ghi sub-job trong DB, hỗ trợ chia nhỏ cho port-scan và xoay VPN profile."""
         import os
         from app.utils.port_utils import parse_nmap_top_ports, parse_ports_all, parse_ports_custom, split_ports
@@ -385,7 +400,8 @@ class WorkflowService:
                                 step_order=step_counter,
                                 vpn_profile=chunk_vpn,
                                 vpn_country=getattr(workflow_db, "vpn_country", None),
-                                vpn_assignment=None
+                                vpn_assignment=None,
+                                workflow_phase=workflow_phase
                             )
                             job = crud_scan_job.create(self.db, job_obj=job_obj)
                             sub_jobs_to_create.append(job)
@@ -427,7 +443,8 @@ class WorkflowService:
                                         step_order=step_counter,
                                         vpn_profile=json.dumps(job_vpn) if isinstance(job_vpn, dict) else job_vpn,
                                         vpn_country=getattr(workflow_db, "vpn_country", None),
-                                        vpn_assignment=None
+                                        vpn_assignment=None,
+                                        workflow_phase=workflow_phase
                                     )
                                     job = crud_scan_job.create(self.db, job_obj=job_obj)
                                     sub_jobs_to_create.append(job)
@@ -485,7 +502,8 @@ class WorkflowService:
                                         step_order=step_counter,
                                         vpn_profile=json.dumps(chunk_vpn) if isinstance(chunk_vpn, dict) else chunk_vpn,
                                         vpn_country=getattr(workflow_db, "vpn_country", None),
-                                        vpn_assignment=None
+                                        vpn_assignment=None,
+                                        workflow_phase=workflow_phase
                                     )
                                     job = crud_scan_job.create(self.db, job_obj=job_obj)
                                     sub_jobs_to_create.append(job)
@@ -504,7 +522,8 @@ class WorkflowService:
                             step_order=step_counter,
                             vpn_profile=json.dumps(getattr(workflow_db, "vpn_profile", None)) if isinstance(getattr(workflow_db, "vpn_profile", None), dict) else getattr(workflow_db, "vpn_profile", None),
                             vpn_country=getattr(workflow_db, "vpn_country", None),
-                            vpn_assignment=json.dumps(vpn_assignment) if isinstance(vpn_assignment, dict) else vpn_assignment
+                            vpn_assignment=json.dumps(vpn_assignment) if isinstance(vpn_assignment, dict) else vpn_assignment,
+                            workflow_phase=workflow_phase
                         )
                         job = crud_scan_job.create(self.db, job_obj=job_obj)
                         sub_jobs_to_create.append(job)
@@ -523,7 +542,8 @@ class WorkflowService:
                     step_order=step_counter,
                     vpn_profile=json.dumps(getattr(workflow_db, "vpn_profile", None)) if isinstance(getattr(workflow_db, "vpn_profile", None), dict) else getattr(workflow_db, "vpn_profile", None),
                     vpn_country=getattr(workflow_db, "vpn_country", None),
-                    vpn_assignment=json.dumps(vpn_assignment) if isinstance(vpn_assignment, dict) else vpn_assignment
+                    vpn_assignment=json.dumps(vpn_assignment) if isinstance(vpn_assignment, dict) else vpn_assignment,
+                    workflow_phase=workflow_phase
                 )
                 job = crud_scan_job.create(self.db, job_obj=job_obj)
                 sub_jobs_to_create.append(job)

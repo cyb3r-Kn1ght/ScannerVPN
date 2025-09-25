@@ -132,9 +132,25 @@ class ResultService:
                 except Exception: meta = {}
 
             if "httpx_results" in meta:
-                for ep in meta["httpx_results"]:
-                    ws = ep.get("webserver")
-                    if ws: summary_by_target[tgt]["web_technologies"].add(ws)
+                    # Tạo object summary cho từng url
+                    httpx_objs = []
+                    for ep in meta["httpx_results"]:
+                        obj = {
+                            "url": ep.get("url"),
+                            "host": ep.get("host"),
+                            "port": int(ep.get("port")) if ep.get("port") else None,
+                            "scheme": ep.get("protocol"),
+                            "webserver": ep.get("webserver"),
+                            "tech": ep.get("tech"),
+                            "status_code": ep.get("statusCode"),
+                            "title": ep.get("title"),
+                            "content_length": ep.get("content_length")
+                        }
+                        httpx_objs.append(obj)
+                        ws = ep.get("webserver")
+                        if ws: summary_by_target[tgt]["web_technologies"].add(ws)
+                    # Gán vào summary
+                    summary_by_target[tgt]["httpx_summary"] = httpx_objs
             if "nuclei_results" in meta:
                 for finding in meta["nuclei_results"]:
                     info = finding.get("info", {})

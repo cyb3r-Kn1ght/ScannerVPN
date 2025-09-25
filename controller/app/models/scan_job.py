@@ -21,5 +21,6 @@ class ScanJob(Base):
     workflow_id = Column(String, ForeignKey("workflow_jobs.workflow_id"), nullable=True)
     workflow = relationship("WorkflowJob", back_populates="sub_jobs")
     step_order = Column(Integer, nullable=True)
+    workflow_phase = Column(Integer, nullable=True)  # Số thứ tự lần gọi API/workflow
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

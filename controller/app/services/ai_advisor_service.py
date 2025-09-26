@@ -45,7 +45,7 @@ class AIAdvisorService:
         """Tạo câu hỏi phù hợp cho RAG dựa trên tool và kết quả"""
         
         base_query = f"""
-        Tôi đang thực hiện pentest cho target {target} mục tiêu là tìm được flag và vừa hoàn thành quét bằng {tool}.
+        Tôi đang thực hiện pentest cho target {target} mục tiêu là tìm lỗ hổng và vừa hoàn thành quét bằng {tool}.
         
         Kết quả: {summary}
         

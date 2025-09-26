@@ -8,6 +8,8 @@ class WorkflowStep(BaseModel):
     params: Dict[str, Any] = {}
 
 class WorkflowRequest(BaseModel):
+    workflow_id: Optional[str] = None
+    workflow_phase: Optional[int] = None
     targets: List[str]
     strategy: str = "wide"
     steps: List[WorkflowStep]

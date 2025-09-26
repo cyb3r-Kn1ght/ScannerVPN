@@ -17,6 +17,7 @@ class WorkflowJob(Base):
     total_steps = Column(Integer, default=0)
     completed_steps = Column(Integer, default=0)
     failed_steps = Column(Integer, default=0)
+    total_phase = Column(Integer, default=1)  # Tổng số phase (lần gọi API/workflow)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     sub_jobs = relationship("ScanJob", back_populates="workflow")

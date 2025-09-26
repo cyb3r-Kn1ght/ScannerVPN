@@ -17,7 +17,15 @@ async def create_workflow(
         workflow_service: WorkflowService = Depends(get_workflow_service)
 ):
     try:
-        result = await workflow_service.create_and_dispatch_workflow(workflow_in=workflow_in)
+        # Lấy workflow_id từ payload nếu có
+        workflow_id = getattr(workflow_in, "workflow_id", None)
+        # Nếu muốn truyền workflow_phase, lấy từ payload hoặc tự động tăng
+        workflow_phase = getattr(workflow_in, "workflow_phase", None)
+        result = await workflow_service.create_and_dispatch_workflow(
+            workflow_in=workflow_in,
+            workflow_id=workflow_id,
+            workflow_phase=workflow_phase
+        )
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating workflow: {str(e)}")

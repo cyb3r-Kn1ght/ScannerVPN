@@ -26,7 +26,14 @@ class WorkflowService:
         # Get sub-jobs
         sub_jobs = db.query(ScanJob).filter(
             ScanJob.workflow_id == workflow_id
-        ).order_by(ScanJob.step_order).all()
+        ).order_by(ScanJob.created_at).all()
+
+        # Lấy tổng số phase từ DB
+        total_phase = workflow.total_phase or 1
+
+        # Sắp xếp step_order lại cho đúng thứ tự tạo (theo created_at)
+        for idx, job in enumerate(sub_jobs, 1):
+            job.step_order = idx
 
         sub_job_list = []
         for job in sub_jobs:
@@ -34,7 +41,8 @@ class WorkflowService:
                 "job_id": job.job_id,
                 "tool": job.tool,
                 "status": job.status,
-                "step_order": job.step_order
+                "step_order": job.step_order,
+                "workflow_phase": job.workflow_phase
             }
             if getattr(job, "error_message", None):
                 job_dict["error_message"] = job.error_message
@@ -46,6 +54,11 @@ class WorkflowService:
         total = getattr(workflow, "total_steps", None) or len(sub_jobs)
         percentage = ((completed + failed) / total * 100) if total > 0 else 0
 
+        # Nếu tất cả sub-job đã completed thì cập nhật status workflow
+        if completed == total and total > 0:
+            workflow.status = "completed"
+            db.commit()
+
         # Compose workflow info
         workflow_info = {
             "workflow_id": workflow.workflow_id,
@@ -53,7 +66,8 @@ class WorkflowService:
             "updated_at": getattr(workflow, "updated_at", None) or getattr(workflow, "timestamp", None),
             "created_at": getattr(workflow, "created_at", None) or getattr(workflow, "timestamp", None),
             "targets": getattr(workflow, "targets", []),
-            "vpn": getattr(workflow, "vpn_country", None) or getattr(workflow, "vpn_profile", None)
+            "vpn": getattr(workflow, "vpn_country", None) or getattr(workflow, "vpn_profile", None),
+            "total_phase": total_phase
         }
 
         return {
@@ -285,10 +299,15 @@ class WorkflowService:
                 crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"status": "running"})
             # Tăng total_steps
             old_total = workflow_db.total_steps or 0
+            # Tăng total_phase lên mỗi lần có phase mới
+            workflow_db.total_phase = (workflow_db.total_phase or 1) + 1
+            self.db.commit()
         else:
             workflow_id = f"workflow-{uuid4().hex[:8]}"
             workflow_db = crud_workflow.create_workflow(db=self.db, workflow_in=workflow_in, workflow_id=workflow_id)
             old_total = 0
+            workflow_db.total_phase = 1
+            self.db.commit()
 
         vpn_assignment = await self._assign_vpn_to_workflow(workflow_in)
         if vpn_assignment:

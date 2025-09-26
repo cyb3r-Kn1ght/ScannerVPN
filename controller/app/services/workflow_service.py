@@ -302,12 +302,16 @@ class WorkflowService:
             # Tăng total_phase lên mỗi lần có phase mới
             workflow_db.total_phase = (workflow_db.total_phase or 1) + 1
             self.db.commit()
+            # Truyền workflow_phase mới nhất vào sub-job
+            current_phase = workflow_db.total_phase
         else:
             workflow_id = f"workflow-{uuid4().hex[:8]}"
             workflow_db = crud_workflow.create_workflow(db=self.db, workflow_in=workflow_in, workflow_id=workflow_id)
             old_total = 0
             workflow_db.total_phase = 1
             self.db.commit()
+            # Truyền workflow_phase=1 vào sub-job
+            current_phase = 1
 
         vpn_assignment = await self._assign_vpn_to_workflow(workflow_in)
         if vpn_assignment:
@@ -315,7 +319,7 @@ class WorkflowService:
             logger.info(f"Assigned VPN {vpn_assignment.get('hostname')} to workflow {workflow_id}")
 
         # Truyền workflow_phase khi tạo sub-job
-        sub_jobs = self._create_sub_jobs_in_db(workflow_db, workflow_in.steps, vpn_assignment, workflow_phase=workflow_phase)
+        sub_jobs = self._create_sub_jobs_in_db(workflow_db, workflow_in.steps, vpn_assignment, workflow_phase=current_phase)
         crud_workflow.update(self.db, db_obj=workflow_db, obj_in={"total_steps": old_total + len(sub_jobs)})
 
         # Track detailed job submission results

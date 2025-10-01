@@ -52,30 +52,30 @@ def list_supported_tools():
             "name": "Kiểm tra HTTPX",
             "description": "Kiểm tra thông tin HTTP, tiêu đề, trạng thái, SSL, v.v.",
             "fields": [
-                {"name": "follow_redirects", "label": "Theo dõi chuyển hướng", "component": "Switch", "defaultValue": True},
-                {"name": "status_codes", "label": "Lọc theo mã trạng thái", "component": "TagsInput", "placeholder": "vd: 200,301,404",
-                 "data": ["200,204", "301,302,307", "400,401,403", "500,502,503"]},
+                {"name": "method", "label": "HTTP Method", "component": "Select", "defaultValue": "GET", "data": [
+                {"value": "GET", "label": "GET"},
+                {"value": "POST", "label": "POST"},
+                {"value": "HEAD", "label": "HEAD"}
+                ]},
+                {"name": "ports", "label": "Cổng quét", "component": "TextInput", "placeholder": "vd: 80,443"},
                 {"name": "timeout", "label": "Timeout (giây)", "component": "NumberInput", "defaultValue": 10},
                 {"name": "retries", "label": "Số lần thử lại", "component": "NumberInput", "defaultValue": 2},
-                {"name": "ports", "label": "Cổng quét", "component": "TextInput", "placeholder": "vd: 80,443"},
+                {"name": "threads", "label": "Số luồng", "component": "NumberInput", "defaultValue": 10},
+                {"name": "status_codes", "label": "Lọc theo mã trạng thái", "component": "TagsInput", "placeholder": "vd: 200,301,404",
+                "data": ["200,204", "301,302,307", "400,401,403", "500,502,503"]},
+                {"name": "follow_redirects", "label": "Theo dõi chuyển hướng", "component": "Switch", "defaultValue": True},
+                {"name": "tech_detect", "label": "Phát hiện công nghệ", "component": "Switch", "defaultValue": True},
                 {"name": "title", "label": "Lấy tiêu đề trang", "component": "Switch", "defaultValue": True},
                 {"name": "ip", "label": "Lấy địa chỉ IP", "component": "Switch", "defaultValue": True},
                 {"name": "web_server", "label": "Lấy thông tin Web Server", "component": "Switch", "defaultValue": True},
-                {"name": "content_length", "label": "Lấy Content-Length", "component": "Switch", "defaultValue": True},
-                {"name": "tech_detect", "label": "Phát hiện công nghệ", "component": "Switch", "defaultValue": True},
-                {"name": "location", "label": "Lấy Location Header", "component": "Switch", "defaultValue": False},
-                {"name": "cname", "label": "Lấy CNAME", "component": "Switch", "defaultValue": False},
-                {"name": "cdn", "label": "Kiểm tra CDN", "component": "Switch", "defaultValue": False},
-                {"name": "threads", "label": "Số luồng", "component": "NumberInput", "defaultValue": 10},
-                {"name": "method", "label": "HTTP Method", "component": "Select", "defaultValue": "GET", "data": [
-                    {"value": "GET", "label": "GET"},
-                    {"value": "POST", "label": "POST"},
-                    {"value": "HEAD", "label": "HEAD"}
-                ]},
                 {"name": "response_time", "label": "Lấy thời gian phản hồi", "component": "Switch", "defaultValue": False},
+                {"name": "content_length", "label": "Lấy Content-Length", "component": "Switch", "defaultValue": True},
                 {"name": "content_type", "label": "Lấy Content-Type", "component": "Switch", "defaultValue": False},
                 {"name": "response_size", "label": "Lấy kích thước phản hồi", "component": "Switch", "defaultValue": False},
-                {"name": "include_response", "label": "Bao gồm nội dung phản hồi", "component": "Switch", "defaultValue": False}
+                {"name": "include_response", "label": "Bao gồm nội dung phản hồi", "component": "Switch", "defaultValue": False},
+                {"name": "location", "label": "Lấy Location Header", "component": "Switch", "defaultValue": False},
+                {"name": "cname", "label": "Lấy CNAME", "component": "Switch", "defaultValue": False},
+                {"name": "cdn", "label": "Kiểm tra CDN", "component": "Switch", "defaultValue": False}
             ]
         },
         {
@@ -84,16 +84,14 @@ def list_supported_tools():
             "description": "Tìm kiếm các thư mục và file ẩn trên web server.",
             "fields": [
                 {"name": "wordlist", "label": "Wordlist", "component": "TextInput", "placeholder": "/app/dicc.txt", "defaultValue": "/app/dicc.txt"},
-                {"name": "wordlist_start", "label": "Dòng bắt đầu wordlist", "component": "NumberInput"},
-                {"name": "wordlist_end", "label": "Dòng kết thúc wordlist", "component": "NumberInput"},
-                {"name": "threads", "label": "Số luồng (threads)", "component": "NumberInput", "defaultValue": 30},
                 {"name": "extensions", "label": "Phần mở rộng cần quét", "component": "TagsInput", "placeholder": "vd: php,asp,aspx",
-                 "data": ["php", "html", "js", "aspx", "jsp", "txt", "bak", "config", "env"]},
+                "data": ["php", "html", "js", "aspx", "jsp", "txt", "bak", "config", "env"]},
                 {"name": "include_status", "label": "Trạng thái HTTP cần lấy", "component": "TagsInput", "placeholder": "vd: 200,204,301,302,307,401,403"},
                 {"name": "recursive", "label": "Quét đệ quy", "component": "Switch", "defaultValue": False},
                 {"name": "no_extensions", "label": "Không dùng extensions (-e)", "component": "Switch", "defaultValue": False},
-                {"name": "random_agent", "label": "Random User-Agent", "component": "Switch", "defaultValue": False},
-                {"name": "scanner_count", "label": "Số lượng scanner song song", "component": "NumberInput", "min": 1, "max": 20}
+                {"name": "threads", "label": "Số luồng (threads)", "component": "NumberInput", "defaultValue": 30},
+                {"name": "scanner_count", "label": "Số lượng scanner song song", "component": "NumberInput", "min": 1, "max": 20},
+                {"name": "random_agent", "label": "Random User-Agent", "component": "Switch", "defaultValue": False}
             ]
         },
         {
@@ -126,34 +124,35 @@ def list_supported_tools():
             "name": "Quét SQL Injection (SQLMap)",
             "description": "Tự động phát hiện và khai thác các lỗ hổng SQL injection.",
             "fields": [
-                {"name": "threads", "label": "Số luồng (threads)", "component": "NumberInput", "defaultValue": 1},
+                {"name": "data", "label": "POST data/raw hoặc file", "component": "TextInput", "placeholder": "vd: id=1&name=test hoặc file:@post.txt"},
+                {"name": "headers", "label": "Headers (JSON hoặc Key:Value)", "component": "TextInput", "placeholder": "vd: {\"User-Agent\":\"sqlmap\"} hoặc User-Agent:sqlmap;X-Forwarded-For:127.0.0.1"},
+                {"name": "cookie", "label": "Cookie string", "component": "TextInput", "placeholder": "vd: PHPSESSID=abc; user=admin"},
+                {"name": "parameter", "label": "Tham số cần kiểm tra (-p)", "component": "TextInput", "placeholder": "vd: id,username"},
+                {"name": "technique", "label": "Kỹ thuật tấn công", "component": "TextInput", "placeholder": "vd: BEUS (Boolean, Error, Union, Stacked)"},
+                {"name": "tamper", "label": "Tamper scripts", "component": "TextInput", "placeholder": "vd: between,randomcase"},
                 {"name": "level", "label": "Mức độ kiểm tra (Level)", "component": "Select", "defaultValue": 1, "data": [
-                    {"value": 1, "label": "1 - Cơ bản"},
-                    {"value": 2, "label": "2 - Trung bình"},
-                    {"value": 3, "label": "3 - Nâng cao"},
-                    {"value": 4, "label": "4 - Toàn diện"},
-                    {"value": 5, "label": "5 - Chuyên sâu"}
+                {"value": 1, "label": "1 - Cơ bản"},
+                {"value": 2, "label": "2 - Trung bình"},
+                {"value": 3, "label": "3 - Nâng cao"},
+                {"value": 4, "label": "4 - Toàn diện"},
+                {"value": 5, "label": "5 - Chuyên sâu"}
                 ]},
                 {"name": "risk", "label": "Mức độ rủi ro (Risk)", "component": "Select", "defaultValue": 1, "data": [
-                    {"value": 1, "label": "1 - Thấp"},
-                    {"value": 2, "label": "2 - Trung bình"},
-                    {"value": 3, "label": "3 - Cao"}
+                {"value": 1, "label": "1 - Thấp"},
+                {"value": 2, "label": "2 - Trung bình"},
+                {"value": 3, "label": "3 - Cao"}
                 ]},
-                {"name": "technique", "label": "Kỹ thuật tấn công", "component": "TextInput", "placeholder": "vd: BEUS (Boolean, Error, Union, Stacked)"},
                 {"name": "dbms", "label": "Chỉ định DBMS", "component": "TextInput", "placeholder": "vd: MySQL, PostgreSQL"},
-                {"name": "batch", "label": "Chạy tự động (batch mode)", "component": "Switch", "defaultValue": True},
-                {"name": "random_agent", "label": "Random User-Agent", "component": "Switch", "defaultValue": False},
-                {"name": "tamper", "label": "Tamper scripts", "component": "TextInput", "placeholder": "vd: between,randomcase"},
-                {"name": "delay", "label": "Delay giữa requests (giây)", "component": "NumberInput", "defaultValue": 0},
-                {"name": "data", "label": "POST data/raw hoặc file", "component": "TextInput", "placeholder": "vd: id=1&name=test hoặc file:@post.txt"},
-                {"name": "cookie", "label": "Cookie string", "component": "TextInput", "placeholder": "vd: PHPSESSID=abc; user=admin"},
-                {"name": "headers", "label": "Headers (JSON hoặc Key:Value)", "component": "TextInput", "placeholder": "vd: {\"User-Agent\":\"sqlmap\"} hoặc User-Agent:sqlmap;X-Forwarded-For:127.0.0.1"},
-                {"name": "timeout", "label": "Timeout (giây)", "component": "NumberInput", "defaultValue": 30},
-                {"name": "retries", "label": "Số lần thử lại", "component": "NumberInput", "defaultValue": 2},
                 {"name": "identify_waf", "label": "Thử nhận diện WAF", "component": "Switch", "defaultValue": False},
-                {"name": "skip_urlencode", "label": "Không URL-encode payloads", "component": "Switch", "defaultValue": False}
+                {"name": "skip_urlencode", "label": "Không URL-encode payloads", "component": "Switch", "defaultValue": False},
+                {"name": "random_agent", "label": "Random User-Agent", "component": "Switch", "defaultValue": False},
+                {"name": "batch", "label": "Chạy tự động (batch mode)", "component": "Switch", "defaultValue": True},
+                {"name": "threads", "label": "Số luồng (threads)", "component": "NumberInput", "defaultValue": 1},
+                {"name": "delay", "label": "Delay giữa requests (giây)", "component": "NumberInput", "defaultValue": 0},
+                {"name": "timeout", "label": "Timeout (giây)", "component": "NumberInput", "defaultValue": 30},
+                {"name": "retries", "label": "Số lần thử lại", "component": "NumberInput", "defaultValue": 2}
             ]
-        },
+            },
         {
             "id": "bruteforce-scan",
             "name": "Dò mật khẩu (Bruteforce)",

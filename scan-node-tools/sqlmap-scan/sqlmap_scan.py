@@ -105,29 +105,40 @@ if __name__ == "__main__":
 
         sys.argv = new_argv
 
-        parser = argparse.ArgumentParser(description="Wrapper cho sqlmap -> JSON")
-        parser.add_argument("--url", help="URL đơn lẻ")
-        parser.add_argument("--url-file", help="File chứa nhiều URL, mỗi dòng một URL")
-        parser.add_argument("--threads", type=int, default=1, help="Số threads (mặc định 1)")
-        parser.add_argument("--level", type=int, default=1, help="Level kiểm tra (1-5)")
-        parser.add_argument("--risk", type=int, default=1, help="Risk level (1-3)")
-        parser.add_argument("--technique", help="Technique: B,E,U,S,T")
-        parser.add_argument("--dbms", help="Force DBMS: mysql,oracle,postgresql,mssql,etc")
-        parser.add_argument("--batch", action="store_true", help="Non-interactive mode")
-        parser.add_argument("--random-agent", action="store_true", help="Use random User-Agent")
-        parser.add_argument("--tamper", help="Tamper scripts")
-        parser.add_argument("--delay", type=float, help="Delay giữa requests (seconds)")
-        parser.add_argument("--data", help="POST data/raw hoặc file")
-        parser.add_argument("--cookie", help="Cookie string")
-        parser.add_argument("--headers", help="Headers (JSON hoặc Key:Value)")
-        parser.add_argument("--timeout", type=int, default=30, help="Timeout (giây)")
-        parser.add_argument("--retries", type=int, default=2, help="Số lần thử lại")
-        parser.add_argument("--identify-waf", action="store_true", help="Thử nhận diện WAF")
-        parser.add_argument("--skip-urlencode", action="store_true", help="Không URL-encode payloads")
-        args = parser.parse_args()
 
-        if not args.url and not args.url_file:
-            print(json.dumps({"error":"missing --url or --url-file"})); sys.exit(2)
+        # Luôn lấy tham số từ ENV SCAN_OPTIONS
+
+        scan_options = os.getenv("SCAN_OPTIONS")
+        if not scan_options:
+            print(json.dumps({"error": "missing SCAN_OPTIONS env"})); sys.exit(2)
+        try:
+            options = json.loads(scan_options)
+        except Exception as e:
+            print(json.dumps({"error": f"invalid SCAN_OPTIONS: {e}"})); sys.exit(2)
+
+        # Lấy target từ ENV hoặc positional
+        url = options.get("url")
+        url_file = options.get("url_file")
+        threads = options.get("threads", 1)
+        level = options.get("level", 1)
+        risk = options.get("risk", 1)
+        technique = options.get("technique")
+        dbms = options.get("dbms")
+        batch = options.get("batch", False)
+        random_agent = options.get("random_agent", False)
+        tamper = options.get("tamper")
+        delay = options.get("delay")
+        data = options.get("data")
+        cookie = options.get("cookie")
+        headers = options.get("headers")
+        timeout = options.get("timeout", 30)
+        retries = options.get("retries", 2)
+        identify_waf = options.get("identify_waf", False)
+        skip_urlencode = options.get("skip_urlencode", False)
+        parameter = options.get("parameter")
+
+        if not url and not url_file:
+            print(json.dumps({"error":"missing url or url_file in SCAN_OPTIONS"})); sys.exit(2)
 
         # Tạo output directory tạm
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -137,28 +148,29 @@ if __name__ == "__main__":
             # Base command
             base_cmd = ["python3", "/opt/sqlmap/sqlmap.py"]
             base_cmd += ["--output-dir", output_dir]
-            base_cmd += ["--threads", str(args.threads)]
-            base_cmd += ["--level", str(args.level)]
-            base_cmd += ["--risk", str(args.risk)]
-            
-            if args.batch:
+            base_cmd += ["--threads", str(threads)]
+            base_cmd += ["--level", str(level)]
+            base_cmd += ["--risk", str(risk)]
+            if batch:
                 base_cmd += ["--batch"]
-            if args.random_agent:
+            if random_agent:
                 base_cmd += ["--random-agent"]
-            if args.technique:
-                base_cmd += ["--technique", args.technique]
-            if args.dbms:
-                base_cmd += ["--dbms", args.dbms]
-            if args.tamper:
-                base_cmd += ["--tamper", args.tamper]
-            if args.delay:
-                base_cmd += ["--delay", str(args.delay)]
+            if technique:
+                base_cmd += ["--technique", technique]
+            if dbms:
+                base_cmd += ["--dbms", dbms]
+            if tamper:
+                base_cmd += ["--tamper", tamper]
+            if delay:
+                base_cmd += ["--delay", str(delay)]
+            if parameter:
+                base_cmd += ["-p", parameter]
 
             # Mục tiêu
-            if args.url_file:
-                base_cmd += ["-m", args.url_file]
+            if url_file:
+                base_cmd += ["-m", url_file]
             else:
-                base_cmd += ["-u", args.url]
+                base_cmd += ["-u", url]
 
             # Chạy sqlmap
             print(f"[*] Running: {' '.join(base_cmd)}")
@@ -187,7 +199,7 @@ if __name__ == "__main__":
                                         "parameter": param.strip(),
                                         "type": vuln_type.strip(),
                                         "title": title.strip(),
-                                        "url": args.url if args.url else "multiple"
+                                        "url": url if url else "multiple"
                                     })
                             
                             # Parse databases nếu có
@@ -216,7 +228,7 @@ if __name__ == "__main__":
             # Gửi metadata về Controller nếu có
             job_id = os.getenv("JOB_ID")
             workflow_id = os.getenv("WORKFLOW_ID")
-            target_url = args.url if args.url else None
+            target_url = url if url else None
             
             if controller_url and target_url:
                 try:

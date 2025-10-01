@@ -287,6 +287,13 @@ class WorkflowService:
 
     async def create_and_dispatch_workflow(self, *, workflow_in: workflow_schema.WorkflowRequest, workflow_id: str = None, workflow_phase: int = None) -> dict:
         """Tạo và thực thi một workflow quét mới hoặc thêm sub-job vào workflow cũ."""
+
+        # Nếu không có targets trong request, lấy từ IP pool
+        targets = getattr(workflow_in, "targets", None)
+        if not targets or not isinstance(targets, list) or not targets:
+            from app.services.ip_pool_service import get_ip_pool_targets
+            targets = get_ip_pool_targets(self.db)
+            workflow_in.targets = targets
         logger.info(f"Creating/Updating workflow for targets: {workflow_in.targets}")
 
         # Nếu có workflow_id thì lấy từ DB, không tạo mới

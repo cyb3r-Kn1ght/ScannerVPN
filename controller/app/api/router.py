@@ -9,6 +9,7 @@ from .endpoints import (
     workflows,
     ai_advisor,
     ai_status,
+    ip_pool,
 )
 
 api_router = APIRouter()
@@ -20,3 +21,4 @@ api_router.include_router(vpn.router)
 api_router.include_router(workflows.router)
 api_router.include_router(ai_advisor.router)
 api_router.include_router(ai_status.router)
+api_router.include_router(ip_pool.router)

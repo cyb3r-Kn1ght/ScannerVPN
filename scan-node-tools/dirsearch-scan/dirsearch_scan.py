@@ -164,6 +164,7 @@ if __name__ == "__main__":
 
         # Parse SCAN_OPTIONS env (JSON) và truyền vào sys.argv nếu có
         scan_options_env = os.getenv("SCAN_OPTIONS")
+        random_agent_flag = False
         if scan_options_env:
             try:
                 import json
@@ -180,6 +181,9 @@ if __name__ == "__main__":
                     "no_extensions": "--no-extensions"
                 }
                 for k, v in scan_options.items():
+                    if k == "random_agent" and v:
+                        random_agent_flag = True
+                        continue
                     arg_name = option_map.get(k)
                     if not arg_name:
                         continue
@@ -261,6 +265,8 @@ if __name__ == "__main__":
             base_cmd += ["-i", include_status_raw]
         if args.extensions and not args.no_extensions:
             base_cmd += ["-e", args.extensions]
+        if 'random_agent_flag' in locals() and random_agent_flag:
+            base_cmd += ["--random-agent"]
         # Mục tiêu
         if args.url_file:
             base_cmd += ["-l", args.url_file]

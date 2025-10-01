@@ -117,6 +117,13 @@ if __name__ == "__main__":
         parser.add_argument("--random-agent", action="store_true", help="Use random User-Agent")
         parser.add_argument("--tamper", help="Tamper scripts")
         parser.add_argument("--delay", type=float, help="Delay giữa requests (seconds)")
+        parser.add_argument("--data", help="POST data/raw hoặc file")
+        parser.add_argument("--cookie", help="Cookie string")
+        parser.add_argument("--headers", help="Headers (JSON hoặc Key:Value)")
+        parser.add_argument("--timeout", type=int, default=30, help="Timeout (giây)")
+        parser.add_argument("--retries", type=int, default=2, help="Số lần thử lại")
+        parser.add_argument("--identify-waf", action="store_true", help="Thử nhận diện WAF")
+        parser.add_argument("--skip-urlencode", action="store_true", help="Không URL-encode payloads")
         args = parser.parse_args()
 
         if not args.url and not args.url_file:

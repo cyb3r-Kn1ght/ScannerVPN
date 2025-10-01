@@ -1,0 +1,107 @@
+# Mô tả & Giải thích Hệ thống Database - Báo cáo Đồ án ScannerVPN
+
+## 1. Tổng quan hệ thống database
+
+Hệ thống ScannerVPN sử dụng cơ sở dữ liệu SQLite để lưu trữ toàn bộ thông tin liên quan đến các workflow quét bảo mật, các job scan, kết quả scan, trạng thái VPN, và các thông tin phân tích AI/RAG. Database được lưu trên PersistentVolume của node Kubernetes, đảm bảo dữ liệu không bị mất khi container bị xóa hoặc cập nhật.
+
+
+**File database:**
+- Trong container controller: `/data/controller-db/scan_results.db` (đường dẫn nội bộ container).
+- Trên host Minikube/node: `/data/controller-db/scan_results.db` (đường dẫn vật lý trên máy chủ).
+
+**Cơ chế đồng bộ & lưu trữ:**
+- Hệ thống sử dụng PersistentVolume (PV) với kiểu `hostPath`, được định nghĩa trong file manifest `controller-pv.yaml`.
+- PV này trỏ tới thư mục `/data/controller-db` trên host Minikube. Khi pod controller được tạo, PersistentVolumeClaim (PVC) sẽ mount thư mục này vào container tại đúng đường dẫn `/data/controller-db`.
+- Mọi thao tác ghi/đọc file database (scan_results.db) trong container thực chất là thao tác trực tiếp lên file vật lý trên host. Nhờ đó, dữ liệu luôn đồng bộ giữa container và host, không bị mất khi container bị xóa, cập nhật hoặc khởi động lại.
+- Nếu bạn kiểm tra bằng lệnh trong container (vd: `ls /data/controller-db/scan_results.db`) hoặc trên host Minikube (`ls /data/controller-db/scan_results.db`), đều thấy cùng một file, cùng nội dung.
+- Khi controller ghi dữ liệu vào database, file trên host cũng được cập nhật ngay lập tức và ngược lại.
+
+
+**Hướng dẫn truy cập file database:**
+- Trên host Minikube:
+    - Dùng lệnh ssh vào node Minikube:
+      ```
+      minikube ssh
+      ```
+    - Sau đó thao tác trực tiếp với file database tại `/data/controller-db/scan_results.db`.
+- Trong container controller:
+    - Xác định tên pod controller:
+      ```
+      kubectl get pod -n scan-system
+      ```
+    - Truy cập shell của pod controller:
+      ```
+      kubectl -n scan-system exec -it <controller-pod> -- /bin/sh
+      # hoặc dùng bash nếu có
+      ```
+    - Thao tác với file database tại `/data/controller-db/scan_results.db` bên trong container.
+
+**Ý nghĩa:**
+- Đảm bảo dữ liệu database luôn bền vững, không phụ thuộc vào vòng đời container.
+- Hỗ trợ backup, restore, truy cập dữ liệu từ host hoặc container dễ dàng.
+- Nếu cần di chuyển dữ liệu, chỉ cần thao tác trên thư mục hostPath trên node Minikube.
+
+## 2. Các bảng chính trong database
+
+### 2.1. workflow_jobs
+- **Chức năng:** Lưu thông tin từng workflow quét (một chuỗi các bước quét bảo mật).
+- **Các trường quan trọng:**
+  - `workflow_id`: Mã định danh duy nhất cho workflow.
+  - `targets`: Danh sách mục tiêu quét (IP/domain).
+  - `strategy`: Chiến lược quét (ví dụ: wide, deep).
+  - `status`: Trạng thái workflow (`pending`, `running`, `completed`, ...).
+  - `vpn_profile`, `vpn_country`, `vpn_assignment`: Thông tin VPN sử dụng cho workflow.
+  - `total_steps`, `completed_steps`, `failed_steps`: Thống kê số lượng job trong workflow.
+  - `total_phase`: Số lần mở rộng workflow (thêm tool mới qua API).
+  - `created_at`, `updated_at`: Thời gian tạo/cập nhật.
+
+### 2.2. scan_jobs
+- **Chức năng:** Lưu thông tin từng sub-job (bước quét cụ thể, ví dụ: port-scan, httpx-scan, dns-lookup).
+- **Các trường quan trọng:**
+  - `job_id`: Mã định danh duy nhất cho sub-job.
+  - `tool`: Loại tool quét (httpx-scan, nuclei-scan, dns-lookup, ...).
+  - `targets`: Mục tiêu quét của sub-job.
+  - `options`: Tham số cấu hình cho tool.
+  - `status`: Trạng thái job (`pending`, `running`, `completed`, `failed`).
+  - `error_message`: Thông báo lỗi nếu có.
+  - `vpn_profile`, `vpn_country`, `vpn_assignment`: Thông tin VPN cho từng job.
+  - `workflow_id`: Liên kết tới workflow chứa job này.
+  - `step_order`: Thứ tự job trong workflow.
+  - `workflow_phase`: Số phase (lần mở rộng workflow) mà job này được tạo ra.
+  - `created_at`, `updated_at`: Thời gian tạo/cập nhật.
+
+### 2.3. scan_results
+- **Chức năng:** Lưu kết quả quét của từng sub-job.
+- **Các trường quan trọng:**
+  - `target`: Mục tiêu quét.
+  - `open_ports`, `resolved_ips`: Kết quả quét port/dns.
+  - `scan_metadata`: Dữ liệu chi tiết kết quả (JSON, chứa kết quả từng tool).
+  - `job_id`: Liên kết tới sub-job đã thực hiện quét.
+
+### 2.4. Các bảng phụ trợ khác
+- **vpn_profiles:** Lưu thông tin các VPN có thể sử dụng.
+- **ai_analysis:** Lưu kết quả phân tích AI/RAG cho từng job/workflow.
+
+## 3. Luồng dữ liệu & truy vấn chính
+
+- Khi tạo workflow mới, một bản ghi được thêm vào `workflow_jobs`, các sub-job được thêm vào `scan_jobs` liên kết với workflow.
+- Khi thêm tool mới vào workflow cũ, trường `total_phase` của workflow được tăng lên, các sub-job mới có `workflow_phase` tương ứng.
+- Kết quả quét được lưu vào `scan_results`, liên kết với từng sub-job.
+- Trạng thái workflow và sub-job được cập nhật liên tục dựa trên tiến trình thực tế.
+- Các truy vấn tổng hợp (summary, status, detail) lấy dữ liệu từ nhiều bảng để trả về cho API/UI.
+
+## 4. Đảm bảo dữ liệu bền vững
+
+- Database được mount qua PersistentVolume, đảm bảo không mất dữ liệu khi container bị xóa hoặc cập nhật.
+- Chỉ khi xóa PersistentVolume hoặc thư mục trên host, dữ liệu mới bị mất.
+
+## 5. Ý nghĩa các trường đặc biệt
+
+- **workflow_phase:** Giúp phân biệt các sub-job được tạo ở lần mở rộng workflow nào (hữu ích cho AI/RAG và phân tích lịch sử).
+- **total_phase:** Thống kê số lần workflow được mở rộng (thêm tool mới).
+- **step_order:** Đảm bảo thứ tự các job trong workflow, hỗ trợ hiển thị và phân tích.
+
+---
+
+**Kết luận:**  
+Hệ thống database của ScannerVPN được thiết kế để lưu trữ đầy đủ lịch sử quét, trạng thái, kết quả và phân tích AI/RAG, đảm bảo dữ liệu bền vững và dễ truy xuất cho báo cáo, phân tích và mở rộng workflow.

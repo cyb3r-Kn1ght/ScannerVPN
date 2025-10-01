@@ -12,8 +12,23 @@ class AdminService:
         self.db = db
 
     def clear_all_data(self):
-        """Xóa toàn bộ dữ liệu từ tất cả các bảng."""
-        logger.info("Clearing all database tables.")
+        """Xóa toàn bộ dữ liệu từ tất cả các bảng và xóa toàn bộ scanner jobs/pods trên scanner node."""
+        logger.info("Clearing all database tables and scanner jobs on scanner node.")
+
+        # Lấy danh sách tất cả scanner_job_name còn lại
+        all_scan_jobs = self.db.query(scan_job.ScanJob).all()
+        scanner_job_names = [job.scanner_job_name for job in all_scan_jobs if job.scanner_job_name]
+
+        # Gọi API xóa từng scanner job trên scanner node
+        import httpx
+        from app.core.config import settings
+        deleted_scanner_jobs = []
+        for sjob in scanner_job_names:
+            try:
+                resp = httpx.delete(f"{settings.SCANNER_NODE_URL}/api/scanner_jobs/{sjob}", timeout=10)
+                deleted_scanner_jobs.append({"scanner_job": sjob, "status_code": resp.status_code})
+            except Exception as e:
+                deleted_scanner_jobs.append({"scanner_job": sjob, "error": str(e)})
 
         workflow_count = self.db.query(workflow_job.WorkflowJob).count()
         scan_job_count = self.db.query(scan_job.ScanJob).count()
@@ -25,8 +40,10 @@ class AdminService:
         self.db.commit()
 
         return {
-            "status": "success", "message": "All database tables cleared successfully",
-            "deleted_counts": { "workflows": workflow_count, "scan_jobs": scan_job_count, "scan_results": scan_result_count }
+            "status": "success",
+            "message": "All database tables and scanner jobs cleared successfully",
+            "deleted_counts": { "workflows": workflow_count, "scan_jobs": scan_job_count, "scan_results": scan_result_count },
+            "deleted_scanner_jobs": deleted_scanner_jobs
         }
 
     def clear_scan_results_only(self):

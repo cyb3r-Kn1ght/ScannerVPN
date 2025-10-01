@@ -290,89 +290,108 @@ if __name__ == "__main__":
         print(f"[DEBUG] include_status: {getattr(args, 'include_status', None)}")
         print(f"[DEBUG] recursive: {args.recursive}")
 
-        # Ưu tiên JSON-report nếu có
-        findings = []
-        if has_json_report():
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as f:
-                out = f.name
-            cmd = base_cmd + ["--json-report", out]
-            run(cmd)
-            with open(out, "r", encoding="utf-8", errors="ignore") as fh:
-                raw = fh.read().strip()
-            try:
-                all_results = json.loads(raw).get("results", []) if raw else []
-                # Post-filter by allowed_status
-                if allowed_status:
-                    findings = [item for item in all_results if int(item.get("status", 0)) in allowed_status]
-                else:
-                    findings = all_results
-                print(json.dumps({"findings": findings}, ensure_ascii=False))
-            except Exception:
-                print(json.dumps({"error":"invalid json report", "path": out}, ensure_ascii=False))
+        # Xác định danh sách target
+        if args.url_file:
+            with open(args.url_file, "r", encoding="utf-8", errors="ignore") as f:
+                targets_list = [line.strip() for line in f if line.strip()]
+        elif args.url:
+            targets_list = [args.url]
         else:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
-                out = f.name
-            cmd = base_cmd + ["-o", out]
-            run(cmd)
-            pat = re.compile(
-                r"^(?:\[[^\]]+\]\s*)?"               # optional [time] prefix
-                r"(?P<code>\d{3})\s+"                # status
-                r"(?P<size>\S+)?\s*"                 # optional size "169B", "5KB"
-                r"(?P<url>https?://\S+?)"            # source URL (non-greedy)
-                r"(?:\s*->\s*(?P<redirect>\S+))?"    # optional "-> target"
-                r"\s*$",
-                re.IGNORECASE
-            )
-            with open(out, "r", encoding="utf-8", errors="ignore") as fh:
-                for line in fh:
-                    m = pat.search(line)
-                    if not m:
-                        continue
-                    code = int(m.group("code"))
-                    if allowed_status and code not in allowed_status:
-                        continue
-                    url  = m.group("url").rstrip(",);")
-                    size = (m.group("size") or "").strip()
-                    red  = m.group("redirect")
-                    if red:
-                        red = red.rstrip(",);")
-                    item = {"status": code, "url": url}
-                    if size:
-                        item["size"] = size
-                    if red:
-                        item["redirect_to"] = red
-                    findings.append(item)
-            print(json.dumps({"findings": findings}, ensure_ascii=False))
+            targets_list = []
 
-        # Gửi metadata về Controller nếu có
-        job_id = os.getenv("JOB_ID")
-        workflow_id = os.getenv("WORKFLOW_ID")
-        target_url = args.url if args.url else None
-        if controller_url and target_url:
-            try:
-                has_findings = bool(findings)
-                payload = {
-                    "target": target_url,
-                    "resolved_ips": [],
-                    "open_ports": [],
-                    "workflow_id": workflow_id,
-                    "has_findings": has_findings,
-                    "scan_metadata": {
-                        "tool": "dirsearch-scan",
-                        "job_id": job_id,
-                        "vpn_used": vpn_connected,
-                        "scan_ip": network_info.get("public_ip", "Unknown"),
-                        "vpn_local_ip": network_info.get("local_ip"),
-                        "tun_interface": network_info.get("tun_interface", False),
-                        "dirsearch_results": findings,
-                        "total_findings": len(findings)
+        # Quét từng target riêng biệt và gửi kết quả từng lần
+        for target_url in targets_list:
+            findings = []
+            # Build command cho từng target
+            cmd = base_cmd.copy()
+            # Xóa -u/-l nếu có
+            if "-u" in cmd:
+                idx = cmd.index("-u")
+                del cmd[idx:idx+2]
+            if "-l" in cmd:
+                idx = cmd.index("-l")
+                del cmd[idx:idx+2]
+            cmd += ["-u", target_url]
+
+            if has_json_report():
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as f:
+                    out = f.name
+                cmd_target = cmd + ["--json-report", out]
+                run(cmd_target)
+                with open(out, "r", encoding="utf-8", errors="ignore") as fh:
+                    raw = fh.read().strip()
+                try:
+                    all_results = json.loads(raw).get("results", []) if raw else []
+                    if allowed_status:
+                        findings = [item for item in all_results if int(item.get("status", 0)) in allowed_status]
+                    else:
+                        findings = all_results
+                    print(json.dumps({"findings": findings}, ensure_ascii=False))
+                except Exception:
+                    print(json.dumps({"error":"invalid json report", "path": out}, ensure_ascii=False))
+            else:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+                    out = f.name
+                cmd_target = cmd + ["-o", out]
+                run(cmd_target)
+                pat = re.compile(
+                    r"^(?:\[[^\]]+\]\s*)?"               # optional [time] prefix
+                    r"(?P<code>\d{3})\s+"                # status
+                    r"(?P<size>\S+)?\s*"                 # optional size "169B", "5KB"
+                    r"(?P<url>https?://\S+?)"            # source URL (non-greedy)
+                    r"(?:\s*->\s*(?P<redirect>\S+))?"    # optional "-> target"
+                    r"\s*$",
+                    re.IGNORECASE
+                )
+                with open(out, "r", encoding="utf-8", errors="ignore") as fh:
+                    for line in fh:
+                        m = pat.search(line)
+                        if not m:
+                            continue
+                        code = int(m.group("code"))
+                        if allowed_status and code not in allowed_status:
+                            continue
+                        url  = m.group("url").rstrip(",);")
+                        size = (m.group("size") or "").strip()
+                        red  = m.group("redirect")
+                        if red:
+                            red = red.rstrip(",);")
+                        item = {"status": code, "url": url}
+                        if size:
+                            item["size"] = size
+                        if red:
+                            item["redirect_to"] = red
+                        findings.append(item)
+                print(json.dumps({"findings": findings}, ensure_ascii=False))
+
+            # Gửi metadata về Controller cho từng target
+            job_id = os.getenv("JOB_ID")
+            workflow_id = os.getenv("WORKFLOW_ID")
+            if controller_url and target_url:
+                try:
+                    has_findings = bool(findings)
+                    payload = {
+                        "target": target_url,
+                        "resolved_ips": [],
+                        "open_ports": [],
+                        "workflow_id": workflow_id,
+                        "has_findings": has_findings,
+                        "scan_metadata": {
+                            "tool": "dirsearch-scan",
+                            "job_id": job_id,
+                            "vpn_used": vpn_connected,
+                            "scan_ip": network_info.get("public_ip", "Unknown"),
+                            "vpn_local_ip": network_info.get("local_ip"),
+                            "tun_interface": network_info.get("tun_interface", False),
+                            "dirsearch_results": findings,
+                            "total_findings": len(findings)
+                        }
                     }
-                }
-                print(f"[*] Sending result to Controller for {target_url}: {len(findings)} findings")
-                response = requests.post(f"{controller_url}/api/scan_results", json=payload, timeout=30)
-                print(f"[*] Controller response: {response.status_code}")
-            except Exception as e:
-                print(f"[!] Error sending results to Controller: {e}")
+                    print(f"[*] Sending result to Controller for {target_url}: {len(findings)} findings")
+                    response = requests.post(f"{controller_url}/api/scan_results", json=payload, timeout=30)
+                    print(f"[*] Controller response: {response.status_code}")
+                except Exception as e:
+                    print(f"[!] Error sending results to Controller: {e}")
     except Exception as main_err:
         print(f"[!] Unhandled error: {main_err}")
     finally:

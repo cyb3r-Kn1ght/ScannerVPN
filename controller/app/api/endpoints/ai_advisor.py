@@ -1,3 +1,4 @@
+
 # app/api/endpoints/ai_advisor.py
 import logging
 import asyncio
@@ -209,4 +210,59 @@ def get_ai_status():
         "rag_server_url": getattr(settings, 'RAG_SERVER_URL', 'Not configured'),
         "rag_server_status": rag_status,
         "max_auto_jobs": getattr(settings, 'MAX_AUTO_WORKFLOW_JOBS', 20)
+    }
+
+@router.get("/api/ai/analyze/{workflow_id}/{job_id}", summary="Phân tích AI cho một sub-job của workflow")
+def analyze_single_subjob(
+    workflow_id: str,
+    job_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Phân tích AI cho một sub-job của workflow, không tổng hợp nhiều sub-job.
+    """
+    job = db.query(ScanJob).filter(ScanJob.job_id == job_id, ScanJob.workflow_id == workflow_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail="Job has not been completed yet. Analysis is only available for completed jobs.")
+    scan_results = db.query(ScanResult).filter(
+        ScanResult.scan_metadata.op('->>')('job_id') == job_id
+    ).all()
+    if not scan_results:
+        raise HTTPException(status_code=404, detail="No scan results found for this job.")
+    results_data = []
+    for result in scan_results:
+        results_data.append({
+            "target": result.target,
+            "open_ports": result.open_ports or [],
+            "scan_metadata": result.scan_metadata or {}
+        })
+    ai_service = AIAdvisorService()
+    target_to_analyze = job.targets[0] if job.targets else job.target if hasattr(job, "target") else "Unknown"
+    analysis = ai_service.analyze_scan_results(
+        scan_results=results_data,
+        current_tool=job.tool,
+        target=target_to_analyze
+    )
+    if "error" in analysis:
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {analysis['error']}")
+    analyses = [{
+        "target": target_to_analyze,
+        "analysis": {
+            "ai_analysis": analysis.get("ai_analysis", ""),
+            "summary": analysis.get("summary", ""),
+            "suggested_actions": [
+                {k: v for k, v in act.items() if k != "reason"}
+                for act in analysis.get("suggested_actions", [])
+            ],
+            "confidence": analysis.get("confidence", 0.0)
+        }
+    }]
+    return {
+        "workflow_id": workflow_id,
+        "job_id": job_id,
+        "tool": job.tool,
+        "targets": [target_to_analyze],
+        "analyses": analyses
     }

@@ -132,8 +132,17 @@ if __name__ == "__main__":
         all_results = []
         for target in targets:
             if target.strip():
-                print(f"Scanning {target.strip()}...")
-                result = scan(target.strip())
+                # Tạo biến mới loại bỏ tiền tố http/https
+                def strip_http_prefix(t):
+                    t = t.strip()
+                    if t.startswith("http://"):
+                        return t[7:]
+                    elif t.startswith("https://"):
+                        return t[8:]
+                    return t
+                scan_target = strip_http_prefix(target)
+                print(f"Scanning {target.strip()} (scan_target: {scan_target}) ...")
+                result = scan(scan_target)
                 print(f"Result for {target.strip()}: {result}")
                 all_results.append({
                     "target": target.strip(),

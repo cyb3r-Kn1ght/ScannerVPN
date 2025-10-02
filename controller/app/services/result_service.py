@@ -38,8 +38,16 @@ class ResultService:
                 if job.workflow_id:
                     crud_workflow.update_workflow_progress(self.db, job.workflow_id, logger=logging.getLogger(__name__))
 
-                    # THÊM: Trigger AI analysis khi job hoàn thành
-                    self._trigger_ai_analysis(job.workflow_id, job.job_id)
+                    # Chỉ trigger AI/RAG khi tất cả các job trong cùng workflow_phase đã hoàn thành
+                    current_phase = getattr(job, "workflow_phase", 1)
+                    from app.models.scan_job import ScanJob as ScanJobModel
+                    phase_jobs = self.db.query(ScanJobModel).filter(
+                        ScanJobModel.workflow_id == job.workflow_id,
+                        ScanJobModel.workflow_phase == current_phase
+                    ).all()
+                    if phase_jobs and all(j.status == "completed" for j in phase_jobs):
+                        # Chỉ trigger một lần cho phase này
+                        self._trigger_ai_analysis(job.workflow_id, job.job_id)
 
         self.db.commit()
 

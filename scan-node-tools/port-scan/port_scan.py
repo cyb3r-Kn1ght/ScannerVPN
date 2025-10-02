@@ -234,10 +234,18 @@ if __name__ == "__main__":
         # Scan từng target
         all_results = []
         for target in targets:
-            if target.strip():
-                print(f"Scanning {target.strip()}...")
-                result = scan(target.strip(), options)
-                print(f"Result for {target.strip()}: {len(result.get('open_ports', []))} open ports")
+            t = target.strip()
+            # Loại bỏ tiền tố http://, https:// nếu có
+            if t.startswith('http://'):
+                t = t[7:]
+            elif t.startswith('https://'):
+                t = t[8:]
+            # Nếu còn dấu / ở cuối, loại bỏ
+            t = t.rstrip('/')
+            if t:
+                print(f"Scanning {t}...")
+                result = scan(t, options)
+                print(f"Result for {t}: {len(result.get('open_ports', []))} open ports")
                 all_results.append({
                     "target": target.strip(),
                     "open_ports": result.get("open_ports", [])

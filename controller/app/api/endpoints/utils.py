@@ -32,19 +32,54 @@ def list_supported_tools():
             "name": "Quét Cổng (Port Scan)",
             "description": "Sử dụng Nmap để phát hiện các cổng đang mở trên mục tiêu.",
             "fields": [
-                {"name": "all_ports", "label": "Quét toàn bộ 65535 cổng", "component": "Switch", "defaultValue": False},
-                {"name": "ports", "label": "Hoặc nhập các cổng cụ thể", "component": "TextInput", "placeholder": "vd: 80,443,8080",
-                 "presets": [
-                     {"label": "Top 1000 Ports", "value": "top-1000"},
-                     {"label": "Web Ports", "value": "80,443,8080,8443"},
-                     {"label": "Database Ports", "value": "3306,5432,1433,27017"}
-                 ]},
-                {"name": "scan_type", "label": "Loại scan", "component": "Select", "defaultValue": "-sS",
-                 "data": [
-                     {"value": "-sS", "label": "TCP SYN (-sS)"},
-                     {"value": "-sT", "label": "TCP Connect (-sT)"}
-                 ]},
-                {"name": "scanner_count", "label": "Số lượng scanner song song", "component": "NumberInput", "min": 1, "max": 20}
+                {
+                    "name": "ports",
+                    "label": "Hoặc nhập các cổng cụ thể",
+                    "component": "TextInput",
+                    "placeholder": "vd: 80,443,8080",
+                    "presets": [
+                        {"label": "Top 1000 Ports", "value": "top-1000"},
+                        {"label": "All Ports", "value": "all"},
+                        {"label": "Web Ports", "value": "80,443,8080,8443"},
+                        {"label": "Database Ports", "value": "3306,5432,1433,27017"}
+                    ]
+                },
+                {
+                    "name": "vpn_profile",
+                    "label": "VPN Profile",
+                    "component": "MultiSelect",
+                    "defaultValue": [
+                        "103.57.130.113.ovpn",
+                        "vpngate_61.255.180.199_tcp_1909",
+                        "vpngate_221.168.226.24_udp_1670.ovpn",
+                        "vpngate_106.155.167.26_tcp_1878.ovpn",
+                        "vpngate_42.115.224.83_udp_1457.ovpn"
+                    ],
+                    "data": [
+                        "103.57.130.113.ovpn",
+                        "vpngate_61.255.180.199_tcp_1909",
+                        "vpngate_221.168.226.24_udp_1670.ovpn",
+                        "vpngate_106.155.167.26_tcp_1878.ovpn",
+                        "vpngate_42.115.224.83_udp_1457.ovpn"
+                    ]
+                },
+                {
+                    "name": "scan_type",
+                    "label": "Loại scan",
+                    "component": "Select",
+                    "defaultValue": "-sS",
+                    "data": [
+                        {"value": "-sS", "label": "TCP SYN (-sS)"},
+                        {"value": "-sT", "label": "TCP Connect (-sT)"}
+                    ]
+                },
+                {
+                    "name": "scanner_count",
+                    "label": "Số lượng scanner song song",
+                    "component": "NumberInput",
+                    "min": 1,
+                    "max": 20
+                }
             ]
         },
         {

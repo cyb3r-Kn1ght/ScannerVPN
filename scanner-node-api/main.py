@@ -14,7 +14,7 @@ except:
 
 batch_v1 = client.BatchV1Api()
 
-REGISTRY = os.getenv("REGISTRY", "l4sttr4in/scan-tools")
+REGISTRY = os.getenv("REGISTRY")
 TAG = os.getenv("TAG", "latest")
 NAMESPACE = os.getenv("NAMESPACE", "scan-system")
 
@@ -107,7 +107,7 @@ def _create_job(req: ScanRequest):
     
     container = client.V1Container(
         name=req.tool,
-        image=f"{REGISTRY}/{req.tool}:latest",
+        image=f"{REGISTRY}/{req.tool}:{TAG}",
         args=req.targets,
         env=env_vars,
         image_pull_policy="Never",
